@@ -12,7 +12,8 @@
     wpm: 600,
     timer: null,
     tick: null,
-    keyboard: false
+    keyboard: false,
+    lastExpandedHeight: 540
   };
 
   const panel = document.createElement('section');
@@ -26,7 +27,7 @@
     width: 390px;
     height: 540px;
     min-width: 260px;
-    min-height: 65px;
+    min-height: 48px;
     max-width: 95vw;
     max-height: 90vh;
     z-index: 2147483647;
@@ -94,7 +95,7 @@
       </details>
 
       <details>
-        <summary>Quiz help</summary>
+        <summary>Quiz help (visible questions)</summary>
         <p>Quizzes are detected when visible. Auto pauses for questions. Review answers and submit yourself.</p>
         <button id="ch-copy">Copy visible question text</button>
       </details>
@@ -338,10 +339,12 @@
 
   $('ch-next').onclick = () => {
     stop();
-
-    if (!finish()) {
-      nav('next');
+    if (assessment()) {
+      status('Quiz or interaction detected. Complete it manually.');
+      return;
     }
+    // One click finishes available narration; a second click advances.
+    if (!finish()) nav('next');
   };
 
   $('ch-auto').onclick = () => {
@@ -390,13 +393,17 @@
   let minimized = false;
 
   $('ch-min').onclick = () => {
+    if (!minimized) {
+      state.lastExpandedHeight = panel.getBoundingClientRect().height;
+    }
     minimized = !minimized;
-
-    $('ch-body').style.display =
-      minimized ? 'none' : 'block';
-
-    panel.style.height =
-      minimized ? '48px' : '540px';
+    $('ch-body').style.display = minimized ? 'none' : 'block';
+    panel.style.resize = minimized ? 'none' : 'both';
+    panel.style.height = minimized
+      ? '48px'
+      : Math.min(state.lastExpandedHeight, innerHeight * 0.9) + 'px';
+    $('ch-min').textContent = minimized ? '□' : '−';
+    $('ch-min').title = minimized ? 'Restore panel' : 'Minimize panel';
   };
 
   let drag = null;
