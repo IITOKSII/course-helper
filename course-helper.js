@@ -109,6 +109,44 @@
     </div>
   `;
 
+
+  // Scoped styles: preserve host page appearance and provide visible focus states.
+  const theme = document.createElement('style');
+  theme.id = 'course-helper-pc-theme';
+  theme.textContent = `
+    #course-helper-pc { color-scheme: dark; font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif !important; line-height: 1.5; border-radius: 16px !important; border: 1px solid #66758a !important; box-shadow: 0 18px 48px rgba(0,0,0,.48) !important; }
+    #course-helper-pc, #course-helper-pc * { box-sizing: border-box; }
+    #course-helper-pc button, #course-helper-pc select { font: inherit; background: #2b384b; color: #fff; border: 1px solid #62758c; border-radius: 9px; padding: 9px 12px; min-height: 40px; cursor: pointer; transition: background .15s ease, border-color .15s ease; }
+    #course-helper-pc button:hover { background: #3b4d64; }
+    #course-helper-pc button:active { background: #475e79; }
+    #course-helper-pc :is(button,select,input,summary):focus-visible { outline: 3px solid #7bd4fa; outline-offset: 3px; }
+    #course-helper-pc #ch-head { background: #202d41 !important; border-bottom: 1px solid #46586d; height: 48px; }
+    #course-helper-pc #ch-auto { background: #1b6a63; border-color: #65c7ba; }
+    #course-helper-pc #ch-auto:hover { background: #247e75; }
+    #course-helper-pc #ch-paragraph { background: #34577e; border-color: #8ab4e2; }
+    #course-helper-pc #ch-alert { font-weight: 650; letter-spacing: .01em; }
+    #course-helper-pc details { background: #202a39; border: 1px solid #465467; border-radius: 10px; padding: 12px; margin: 12px 0; }
+    #course-helper-pc summary { cursor: pointer; padding: 4px 0; font-weight: 650; }
+    #course-helper-pc input[type="range"] { accent-color: #7bd4fa; min-height: 28px; }
+    #course-helper-pc input[type="checkbox"] { accent-color: #7bd4fa; width: 17px; height: 17px; vertical-align: middle; }
+    #course-helper-pc #ch-status { padding: 10px; border-radius: 9px; background: #263449; color: #f0f6ff !important; font-size: 13px !important; }
+    #course-helper-pc #ch-text { font-size: 14px; line-height: 1.65 !important; }
+    #course-helper-pc #ch-head button { min-width: 38px; min-height: 32px; padding: 3px 9px; }
+    @media (prefers-reduced-motion: reduce) { #course-helper-pc button { transition: none; } }
+  `;
+  document.head.appendChild(theme);
+  panel.setAttribute('aria-label', 'Course Helper');
+  panel.setAttribute('role', 'region');
+  panel.querySelector('#ch-min').setAttribute('aria-label', 'Minimize or restore Course Helper');
+  panel.querySelector('#ch-close').setAttribute('aria-label', 'Close Course Helper');
+  panel.querySelector('#ch-rate').setAttribute('aria-label', 'Reading speed in words per minute');
+  panel.querySelector('#ch-speed').setAttribute('aria-label', 'Media playback speed');
+  panel.querySelector('#ch-alert').setAttribute('aria-live', 'polite');
+  panel.querySelector('#ch-status').setAttribute('aria-live', 'polite');
+  // Distinct navigation controls are easier to identify at a glance.
+  panel.querySelector('#ch-next').title = 'Advance to the next slide when available';
+  panel.querySelector('#ch-paragraph').title = 'Finish the current accessible narration';
+
   document.body.append(panel);
 
   const $ = id => panel.querySelector('#' + id);
@@ -505,6 +543,7 @@
     clearInterval(state.tick);
     document.removeEventListener('keydown', keys, true);
     panel.remove();
+    document.getElementById('course-helper-pc-theme')?.remove();
     delete window.__chPCStop;
   }
 
