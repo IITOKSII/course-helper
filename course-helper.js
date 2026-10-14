@@ -18,7 +18,8 @@
     epoch: 0,
     delays: new Set(),
     lastSlide: '',
-    busy: false
+    busy: false,
+    scormState: 'Unknown'
   };
 
   const panel = document.createElement('section');
@@ -103,10 +104,17 @@
         <summary>Quiz help (visible questions)</summary>
         <p>Quizzes are detected when visible. Auto pauses for questions. Review answers and submit yourself.</p>
         <button id="ch-copy">Copy visible question text</button>
-        <button id="ch-suggest">Find answer clues</button>
+        <button id="ch-suggest">Find lesson clues</button>
+        <button id="ch-preview">Upcoming quizzes</button>
+        <div id="ch-preview-result" role="status" style="white-space:pre-wrap;font-size:12px;margin-top:8px"></div>
         <div id="ch-clues" style="white-space:pre-wrap;font-size:12px;line-height:1.45;margin-top:8px"></div>
       </details>
 
+      <details><summary>Completion and diagnostics</summary>
+        <button id="ch-check">Check completion</button>
+        <button id="ch-diagnose">Diagnostics</button>
+        <div id="ch-diagnostic-result" role="status" style="white-space:pre-wrap;font-size:12px;margin-top:8px"></div>
+      </details>
       <p id="ch-status" role="status" style="font-size:12px;color:#c7d5e5">
         Ready. Resize by dragging the bottom-right corner.
       </p>
@@ -201,6 +209,61 @@
     }
 
     return false;
+  }
+
+  function readCompletion() {
+    // Read-only status; do not manipulate SCORM progress.
+    const lines = [];
+    const seen = new Set();
+    let current = window;
+    for (let depth = 0; depth < 6 && current; depth++) {
+      try {
+        for (const key of ['API_1484_11', 'API']) {
+          const api = current[key];
+          if (!api || seen.has(api)) continue;
+          seen.add(api);
+          try {
+            if (key === 'API_1484_11' && typeof api.GetValue === 'function') {
+              lines.push('SCORM 2004 completion: ' + (api.GetValue('cmi.completion_status') || 'unknown'));
+              lines.push('SCORM 2004 success: ' + (api.GetValue('cmi.success_status') || 'unknown'));
+            } else if (key === 'API' && typeof api.LMSGetValue === 'function') {
+              lines.push('SCORM 1.2 lesson status: ' + (api.LMSGetValue('cmi.core.lesson_status') || 'unknown'));
+            }
+          } catch { lines.push('SCORM API located but status was inaccessible'); }
+        }
+        if (current.parent === current) break;
+        current = current.parent;
+      } catch { break; }
+    }
+    const visibleStatus = docs().flatMap(d => [...d.querySelectorAll('[role=status],.completion-status,.course-status')])
+      .filter(visible).map(el => (el.innerText || '').trim()).filter(Boolean).slice(0,5);
+    if (visibleStatus.length) lines.push('Visible status: ' + visibleStatus.join(' | ').slice(0,350));
+    if (!lines.length) lines.push('No accessible completion status. Verify in the learner dashboard.');
+    return lines.join('\n');
+  }
+
+  function upcomingQuiz() {
+    const results = [];
+    for (const doc of docs()) {
+      for (const el of doc.querySelectorAll('nav a,aside a,[role=navigation] a,.toc li,.menu li')) {
+        if (!visible(el)) continue;
+        const t = (el.innerText || '').trim();
+        if (t.length < 160 && /(quiz|knowledge check|assessment|test)/i.test(t)) results.push(t);
+      }
+    }
+    return [...new Set(results)].slice(0,6);
+  }
+
+  function diagnose() {
+    return [
+      'Helper: loaded',
+      'Accessible documents: ' + docs().length,
+      'Media found: ' + media().length,
+      'Words shown: ' + refresh(),
+      'Quiz or interaction: ' + (assessment() ? 'possibly detected' : 'not detected'),
+      'Slide signature: ' + (slideSignature() ? 'available' : 'not available'),
+      readCompletion()
+    ].join('\n');
   }
 
   function status(message) {
@@ -435,6 +498,15 @@
   $('ch-keys').onchange = e => {
     state.keyboard = e.target.checked;
   };
+
+  $('ch-preview').onclick = () => {
+    const hits = upcomingQuiz();
+    $('ch-preview-result').textContent = hits.length
+      ? 'Possible quizzes in visible navigation:\n• ' + hits.join('\n• ')
+      : 'No upcoming quiz visible in accessible course navigation; not a guarantee.';
+  };
+  $('ch-check').onclick = () => { $('ch-diagnostic-result').textContent = readCompletion(); };
+  $('ch-diagnose').onclick = () => { $('ch-diagnostic-result').textContent = diagnose(); };
 
   $('ch-suggest').onclick = () => {
     const text = docs().map(d => d.body?.innerText || '').join('\n');
