@@ -16,7 +16,9 @@
     lastExpandedHeight: 540,
     pendingNarration: false,
     epoch: 0,
-    delays: new Set()
+    delays: new Set(),
+    lastSlide: '',
+    busy: false
   };
 
   const panel = document.createElement('section');
@@ -189,7 +191,7 @@
         .filter(el => visible(el) && !panel.contains(el))
         .map(el => el.innerText || '').join(' ').slice(0,18000).toLowerCase();
 
-      if (/(knowledge check|knowledge quiz|submit answer|check answer|select the correct|which of the following|quiz|assessment)/.test(quizText)) {
+      if (/(knowledge check|knowledge quiz|submit answer|check answer|select the correct|which of the following)/.test(quizText)) {
         return true;
       }
 
@@ -229,6 +231,11 @@
       'No readable text detected in this slide.';
 
     return chunks.join(' ').split(/\s+/).filter(Boolean).length;
+  }
+
+  function slideSignature() {
+    return docs().map(doc => [...doc.querySelectorAll('main,article,[role=main],.slide')]
+      .filter(visible).map(el => (el.innerText || '').trim().slice(0,800)).join('|')).join('||');
   }
 
   function media() {
@@ -278,45 +285,42 @@
 
   function nav(dir) {
     if (assessment()) {
-      stop('Question or interaction detected. Auto stopped.');
+      stop('Question or interaction detected. Complete it manually.');
       return false;
     }
-
-    const terms = dir === 'next'
-      ? ['next', 'continue', 'next slide']
-      : ['back', 'previous', 'previous slide'];
-
+    const terms = dir === 'next' ? ['next','continue','next slide'] : ['back','previous','previous slide'];
+    const candidates = [];
     for (const doc of docs()) {
-      const all = [
-        ...doc.querySelectorAll(
-          'button,a,[role=button],input[type=button]'
-        )
-      ];
-
-      const button = all.find(
-        x =>
-          visible(x) &&
-          !x.disabled &&
-          terms.some(
-            t => label(x) === t || label(x).startsWith(t + ' ')
-          )
-      );
-
-      if (button) {
-        const before = (doc.body?.innerText || '').slice(0,1200);
-        button.click();
-
-        status(
-          `Selected ${dir}. Completion is not guaranteed until the LMS confirms it.`
-        );
-
-        later(() => { refresh(); if ((doc.body?.innerText || '').slice(0,1200) === before) status('Navigation attempted; verify the slide changed.'); }, 700);
-        return true;
+      for (const el of doc.querySelectorAll('button,a,[role="button"],input[type="button"]')) {
+        if (!visible(el) || el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
+        const name = label(el);
+        if (!terms.some(t => name === t || name.startsWith(t + ' '))) continue;
+        const context = el.closest('main,article,[role=main],.slide,.content,.player');
+        candidates.push({el, score: (context ? 10 : 0) + (name === terms[0] ? 2 : 0)});
       }
     }
-
-    status(`No accessible ${dir} control found.`);
-    return false;
+    candidates.sort((a,b)=>b.score-a.score);
+    if (!candidates.length) {
+      status('No available ' + dir + ' control. Use course navigation.');
+      return false;
+    }
+    if (candidates.length > 1 && candidates[0].score === candidates[1].score) {
+      status('Several navigation buttons found. Use the course Next/Back control to avoid the wrong action.');
+      return false;
+    }
+    const before = slideSignature();
+    candidates[0].el.click();
+    state.pendingNarration = false;
+    later(() => {
+      refresh();
+      if (slideSignature() === before) {
+        status('Navigation attempted but slide change not confirmed. Check course page.');
+        if (state.auto) stop('Auto stopped: slide change not confirmed.');
+      } else {
+        status('Slide content changed. Check LMS progress separately.');
+      }
+    }, 900);
+    return true;
   }
 
   function stop(reason) {
@@ -380,6 +384,7 @@
 
   $('ch-prev').onclick = () => {
     stop();
+    state.pendingNarration = false;
     nav('previous');
   };
 
@@ -432,10 +437,7 @@
   };
 
   $('ch-copy').onclick = async () => {
-    let text = docs()
-      .map(d => d.body?.innerText || '')
-      .join('\n')
-      .slice(0, 15000);
+    let text = docs().flatMap(d => [...d.querySelectorAll('main,article,[role=main],.slide,.question')].filter(visible).map(e => e.innerText || '')).join('\n').slice(0,15000);
 
     try {
       await navigator.clipboard.writeText(text);
@@ -549,6 +551,7 @@
 
   function cleanup() {
     stop();
+    state.pendingNarration = false;
     clearInterval(state.tick);
     for (const id of state.delays) clearTimeout(id);
     state.delays.clear();
