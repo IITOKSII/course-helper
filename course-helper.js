@@ -14,7 +14,9 @@
     tick: null,
     keyboard: false,
     lastExpandedHeight: 540,
-    pendingNarration: false
+    pendingNarration: false,
+    epoch: 0,
+    delays: new Set()
   };
 
   const panel = document.createElement('section');
@@ -151,6 +153,8 @@
 
   const $ = id => panel.querySelector('#' + id);
 
+  const later = (fn, ms) => { const id = setTimeout(() => { state.delays.delete(id); if (panel.isConnected) fn(); }, ms); state.delays.add(id); return id; };
+
   const docs = () => {
     const out = [document];
 
@@ -167,6 +171,7 @@
 
   const visible = el =>
     !!el.getClientRects().length &&
+    !panel.contains(el) &&
     getComputedStyle(el).visibility !== 'hidden';
 
   const label = el =>
@@ -180,9 +185,9 @@
 
   function assessment() {
     for (const doc of docs()) {
-      const quizText = (doc.body?.innerText || '')
-        .slice(0, 18000)
-        .toLowerCase();
+      const quizText = [...doc.querySelectorAll('main, article, [role=main], .slide, .question, .quiz')]
+        .filter(el => visible(el) && !panel.contains(el))
+        .map(el => el.innerText || '').join(' ').slice(0,18000).toLowerCase();
 
       if (/(knowledge check|knowledge quiz|submit answer|check answer|select the correct|which of the following|quiz|assessment)/.test(quizText)) {
         return true;
@@ -229,7 +234,7 @@
   function media() {
     return docs()
       .flatMap(d => [...d.querySelectorAll('audio,video')])
-      .filter(visible);
+      .filter(m => !panel.contains(m));
   }
 
   function speed() {
@@ -267,7 +272,7 @@
         : 'No accessible media timeline. Use the platform controls.'
     );
 
-    setTimeout(refresh, 450);
+    later(refresh, 450);
     return count > 0;
   }
 
@@ -298,13 +303,14 @@
       );
 
       if (button) {
+        const before = (doc.body?.innerText || '').slice(0,1200);
         button.click();
 
         status(
           `Selected ${dir}. Completion is not guaranteed until the LMS confirms it.`
         );
 
-        setTimeout(refresh, 650);
+        later(() => { refresh(); if ((doc.body?.innerText || '').slice(0,1200) === before) status('Navigation attempted; verify the slide changed.'); }, 700);
         return true;
       }
     }
@@ -316,6 +322,7 @@
   function stop(reason) {
     state.auto = false;
     clearTimeout(state.timer);
+    state.epoch++;
 
     $('ch-auto').textContent = 'Start auto';
 
@@ -346,8 +353,9 @@
       `Reading ${words} words; next attempt in ${seconds}s.`
     );
 
+    const epoch = state.epoch;
     state.timer = setTimeout(() => {
-      if (!state.auto) return;
+      if (!state.auto || epoch !== state.epoch) return;
 
       if (assessment()) {
         stop('Quiz detected.');
@@ -355,9 +363,10 @@
       }
 
       finish();
+      if (!state.auto || epoch !== state.epoch) return;
 
       state.timer = setTimeout(() => {
-        if (!state.auto) return;
+        if (!state.auto || epoch !== state.epoch) return;
 
         if (nav('next')) {
           state.timer = setTimeout(cycle, 1200);
@@ -541,6 +550,8 @@
   function cleanup() {
     stop();
     clearInterval(state.tick);
+    for (const id of state.delays) clearTimeout(id);
+    state.delays.clear();
     document.removeEventListener('keydown', keys, true);
     panel.remove();
     document.getElementById('course-helper-pc-theme')?.remove();
