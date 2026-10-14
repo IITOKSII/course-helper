@@ -389,7 +389,6 @@
     state.auto = false;
     clearTimeout(state.timer);
     state.epoch++;
-    state.pendingNarration = false;
 
     $('ch-auto').textContent = 'Start auto';
 
