@@ -199,13 +199,12 @@
         .filter(el => visible(el) && !panel.contains(el))
         .map(el => el.innerText || '').join(' ').slice(0,18000).toLowerCase();
 
-      if (/(knowledge check|knowledge quiz|submit answer|check answer|select the correct|which of the following)/.test(quizText)) {
-        return true;
-      }
-
-      if ([...doc.querySelectorAll('input[type=radio],input[type=checkbox],[role=radio],[role=checkbox]')].some(visible)) {
-        return true;
-      }
+      const answerInputs = [...doc.querySelectorAll('input[type=radio],input[type=checkbox],[role=radio],[role=checkbox]')].some(visible);
+      const actionButtons = [...doc.querySelectorAll('button,[role=button],input[type=submit]')]
+        .filter(visible).some(el => /^(submit|check answer|try again|show answer|submit answer)/i.test(label(el)));
+      const questionPhrases = /(select the correct|which of the following|choose the correct|true or false|submit answer|check answer)/.test(quizText);
+      // Labels and course-menu mentions alone do not block progress.
+      if (answerInputs || actionButtons || questionPhrases) return true;
     }
 
     return false;
@@ -390,6 +389,7 @@
     state.auto = false;
     clearTimeout(state.timer);
     state.epoch++;
+    state.pendingNarration = false;
 
     $('ch-auto').textContent = 'Start auto';
 
