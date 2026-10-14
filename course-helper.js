@@ -13,7 +13,8 @@
     timer: null,
     tick: null,
     keyboard: false,
-    lastExpandedHeight: 540
+    lastExpandedHeight: 540,
+    pendingNarration: false
   };
 
   const panel = document.createElement('section');
@@ -98,6 +99,8 @@
         <summary>Quiz help (visible questions)</summary>
         <p>Quizzes are detected when visible. Auto pauses for questions. Review answers and submit yourself.</p>
         <button id="ch-copy">Copy visible question text</button>
+        <button id="ch-suggest">Find answer clues</button>
+        <div id="ch-clues" style="white-space:pre-wrap;font-size:12px;line-height:1.45;margin-top:8px"></div>
       </details>
 
       <p id="ch-status" role="status" style="font-size:12px;color:#c7d5e5">
@@ -219,6 +222,7 @@
       } catch {}
     }
 
+    if (count) state.pendingNarration = true;
     status(
       count
         ? `Finished ${count} media segment(s).`
@@ -339,12 +343,11 @@
 
   $('ch-next').onclick = () => {
     stop();
-    if (assessment()) {
-      status('Quiz or interaction detected. Complete it manually.');
-      return;
-    }
-    // One click finishes available narration; a second click advances.
-    if (!finish()) nav('next');
+    if (assessment()) return status('Quiz or interaction detected. Complete it manually.');
+    if (state.pendingNarration) {
+      state.pendingNarration = false;
+      nav('next');
+    } else if (!finish()) nav('next');
   };
 
   $('ch-auto').onclick = () => {
@@ -372,6 +375,13 @@
 
   $('ch-keys').onchange = e => {
     state.keyboard = e.target.checked;
+  };
+
+  $('ch-suggest').onclick = () => {
+    const text = docs().map(d => d.body?.innerText || '').join('\n');
+    const lines = text.split('\n').map(x=>x.trim()).filter(x=>x.length>20 && x.length<500);
+    const hints = lines.filter(x => /(because|therefore|means|defined|refers to|is the|are the|important|remember|correct)/i.test(x)).slice(0,12);
+    $('ch-clues').textContent = hints.length ? 'Possible lesson clues (not verified answers):\n• ' + hints.join('\n• ') : 'No answer clues found in visible lesson text. Use Copy visible question text to research the answer.';
   };
 
   $('ch-copy').onclick = async () => {
