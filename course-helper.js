@@ -344,6 +344,10 @@
     }
 
     let words = refresh();
+    if (!words) {
+      stop('No readable lesson content detected. Automatic navigation paused for safety.');
+      return;
+    }
 
     let seconds = Math.max(
       3,
@@ -367,7 +371,10 @@
       }
 
       finish();
-      if (!state.auto || epoch !== state.epoch) return;
+      if (!state.auto || epoch !== state.epoch || assessment()) {
+        if (state.auto && assessment()) stop('Quiz or interaction appeared.');
+        return;
+      }
 
       state.timer = setTimeout(() => {
         if (!state.auto || epoch !== state.epoch) return;
