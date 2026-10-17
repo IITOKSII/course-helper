@@ -18,7 +18,9 @@
     delays: new Set(),
     lastSlide: '',
     busy: false,
-    scormState: 'Unknown'
+    scormState: 'Unknown',
+    popupCloseIds: new Set(['62CBQWEhsiU']),
+    teachCleanup: null
   };
 
   const panel = document.createElement('section');
@@ -97,6 +99,7 @@
         <summary>Visible slide text</summary>
         <div id="ch-text" style="margin-top:8px;white-space:pre-wrap;line-height:1.5;max-height:220px;overflow:auto"></div>
         <button id="ch-refresh">Refresh text</button>
+        <button id="ch-teach-close">Teach pop-up X</button>
       </details>
 
       <details>
@@ -281,7 +284,7 @@
     const chunks = [];
 
     for (const doc of docs()) {
-      for (const el of doc.querySelectorAll('main p,article p,[role=main] p,.slide p,h1,h2,h3')) {
+      for (const el of doc.querySelectorAll('main p,article p,[role=main] p,.slide p,h1,h2,h3,.slide-object-text,.slide-object-textbox')) {
         if (visible(el) && !panel.contains(el)) {
           let t = (el.innerText || '').trim();
 
@@ -304,7 +307,7 @@
   }
 
   function slideSignature() {
-    return docs().map(doc => [...doc.querySelectorAll('main,article,[role=main],.slide')]
+    return docs().map(doc => [...doc.querySelectorAll('main,article,[role=main],.slide,.slide-object-text,.slide-object-textbox')]
       .filter(visible).map(el => (el.innerText || '').trim().slice(0,800)).join('|')).join('||');
   }
 
@@ -408,6 +411,106 @@
     }
   }
 
+  // Verified from the user's Chapter 02, slide 20 DOM. Keep this mapping
+  // scoped to this exact activity; generic Rectangle labels are not enough.
+  const screeningInfoIds = [
+    '5Yf4v0ZEHzB', '60IE5Judeh1', '6iTVaNjoxjp', '5bYJcTGpH9B',
+    '6qlRbDy2a3S', '5gNe0ZiHI6a', '5YT3xfkofN0', '5aywoV9m4Fk',
+    '5lhh9PFHrxy', '6nW3CBlmFjW', '6IMFvZXbiYL'
+  ];
+  function lessonControl(doc, id) {
+    const visual = [...doc.querySelectorAll('[data-model-id="' + id + '"]')]
+      .filter(visible);
+    return visual.find(e => e.classList.contains('slide-object-stategroup')) ||
+      visual[0] || [...doc.querySelectorAll('[id="acc-' + id + '"]')].find(visible);
+  }
+  function clickLessonControl(el) {
+    // Storyline attaches click handling to rendered SVG shapes as well as groups.
+    const target = el.querySelector('.eventable') || el;
+    target.dispatchEvent(new el.ownerDocument.defaultView.MouseEvent('click', {
+      bubbles: true, cancelable: true, view: el.ownerDocument.defaultView
+    }));
+  }
+  function createInfoSequence() {
+    // Discover rendered click-information icons, never arbitrary rectangles.
+    let doc = null;
+    let infoIds = [];
+    for (const candidate of docs()) {
+      const ids = [...candidate.querySelectorAll('[data-acc-text]')]
+        .filter(e => visible(e) && /^(click\s*icon|info(?:rmation)?(?:\s*icon)?)(?:\s+\d+)?$/i.test(e.getAttribute('data-acc-text').trim()))
+        .map(e => e.closest('.slide-object-stategroup[data-model-id]') || e.closest('[data-model-id]'))
+        .filter(Boolean).map(e => e.getAttribute('data-model-id'));
+      const unique = [...new Set(ids)];
+      if (unique.length) { doc = candidate; infoIds = unique; break; }
+    }
+    if (!doc) {
+      doc = docs().find(d => screeningInfoIds.every(id => lessonControl(d, id)));
+      if (doc) infoIds = screeningInfoIds;
+    }
+    if (!doc) return null;
+    let index = 0;
+    let phase = 'open';
+    let deadline = 0;
+    let beforeText = new Set();
+    const findClose = () => {
+      for (const id of state.popupCloseIds) { const el = lessonControl(doc, id); if (el) return el; }
+      return [...doc.querySelectorAll('button,[role=button],[data-acc-text]')].filter(visible).find(e => /^(close(?:\s+(?:window|popup|pop-up|dialog|layer))?|[×✕✖])$/i.test(e.getAttribute('data-acc-text') || label(e)));
+    };
+    const textLines = () => [...doc.querySelectorAll('.slide-object')]
+      .filter(visible).map(e => (e.innerText || e.textContent || '').trim())
+      .filter(t => t.length > 25 && t.length < 12000);
+    return () => {
+      const now = Date.now();
+      const close = findClose();
+      if (phase === 'done') return false;
+      if (phase === 'open') {
+        if (index >= infoIds.length) { phase = 'done'; return false; }
+        if (!close) {
+          const button = lessonControl(doc, infoIds[index]);
+          if (!button) { stop('Information button disappeared. Check the course slide.'); return true; }
+          beforeText = new Set(textLines());
+          clickLessonControl(button);
+        }
+        phase = 'wait-open';
+        deadline = now + 10000;
+        status('Auto: opening information ' + (index + 1) + '/' + infoIds.length + '…');
+        return true;
+      }
+      if (phase === 'wait-open') {
+        if (!close) {
+          if (now > deadline) stop('Pop-up close control not recognised. With it open, click Teach pop-up X, then its X. Restart Auto.');
+          return true;
+        }
+        const text = [...new Set(textLines().filter(t => !beforeText.has(t)))].join(' ');
+        const words = text.split(/\s+/).filter(Boolean).length;
+        deadline = now + Math.max(8000, Math.ceil(words / state.wpm * 60000));
+        phase = 'read';
+        $('ch-text').textContent = text || 'Information pop-up open. Allowing reading time.';
+        return true;
+      }
+      if (phase === 'read') {
+        if (!close) { stop('Pop-up closed before Auto finished. Restart Auto to continue.'); return true; }
+        status('Auto: information ' + (index + 1) + '/' + infoIds.length + '; ' + Math.max(0, Math.ceil((deadline - now) / 1000)) + 's to read.');
+        if (now >= deadline) {
+          clickLessonControl(close);
+          phase = 'wait-close';
+          deadline = now + 5000;
+        }
+        return true;
+      }
+      if (phase === 'wait-close') {
+        if (close) {
+          if (now > deadline) stop('Pop-up X did not close the information. Close it manually.');
+          return true;
+        }
+        index++;
+        phase = 'open';
+        return true;
+      }
+      return true;
+    };
+  }
+
   function cycle() {
     if (!state.auto) return;
     const epoch = state.epoch;
@@ -415,11 +518,17 @@
     let started = Date.now();
     let observedMedia = new Set();
     let nextWaitStarted = null;
+    let infoSequence = null;
 
     const check = () => {
       if (!state.auto || epoch !== state.epoch) return;
       if (assessment()) {
         stop('Quiz or interaction detected. Complete it manually.');
+        return;
+      }
+      if (!infoSequence) infoSequence = createInfoSequence();
+      if (infoSequence && infoSequence()) {
+        if (state.auto) state.timer = setTimeout(check, 500);
         return;
       }
       const current = slideSignature();
@@ -510,6 +619,24 @@
   };
 
   $('ch-refresh').onclick = refresh;
+  $('ch-teach-close').onclick = () => {
+    stop();
+    if (state.teachCleanup) state.teachCleanup();
+    const targets = docs();
+    const capture = e => {
+      if (panel.contains(e.target)) return;
+      const el = e.target.closest('[data-model-id],button,[role=button]');
+      const id = el?.getAttribute('data-model-id');
+      if (!id) { status('No course object ID found. Click the pop-up X itself.'); return; }
+      state.popupCloseIds.add(id);
+      state.teachCleanup();
+      status('Pop-up X learned for this session. Click Start auto to continue.');
+    };
+    state.teachCleanup = () => { targets.forEach(d => d.removeEventListener('click', capture, true)); state.teachCleanup = null; };
+    targets.forEach(d => d.addEventListener('click', capture, true));
+    status('Now click the X on the open course information pop-up.');
+  };
+
 
   $('ch-rate').oninput = e => {
     state.wpm = +e.target.value;
@@ -656,6 +783,7 @@
 
   function cleanup() {
     stop();
+    if (state.teachCleanup) state.teachCleanup();
     state.pendingNarration = false;
     clearInterval(state.tick);
     for (const id of state.delays) clearTimeout(id);
