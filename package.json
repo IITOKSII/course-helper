@@ -1,0 +1,1 @@
+{"private":true,"scripts":{"test":"node tests/browser-dom.cjs && node tests/installer.cjs"},"devDependencies":{"jsdom":"26.1.0"}}
