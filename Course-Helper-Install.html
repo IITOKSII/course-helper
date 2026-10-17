@@ -1,110 +1,272 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Course Helper installer</title><style>body{margin:40px auto;max-width:720px;padding:20px;background:#111925;color:#edf4ff;font:17px/1.6 system-ui}button{background:#64e0c1;border:0;border-radius:12px;padding:16px 24px;font:700 18px system-ui;cursor:pointer}textarea{width:100%;height:180px;background:#202d40;color:white;margin-top:24px}h1{line-height:1.1}#status{color:#92e8cf}</style><h1>Course Helper · recovery 18</h1><p><b>Download this file and open it in Chrome.</b> The ChatGPT file preview may block buttons and clipboard access.</p><p>Refresh the course first to remove the old helper. This lightweight recovery build installs paused. Click Start auto only after confirming the course is responsive. Complete information pop-ups manually.</p><ol><li>Open your course and the lesson.</li><li>Click <b>Copy helper code</b> below, or click inside the code box and press <b>Ctrl+A</b>, then <b>Ctrl+C</b>.</li><li>Return to the course. Press <b>Ctrl + Shift + J</b> to open Chrome’s Console.</li><li>Paste the code and press <b>Enter</b>.</li></ol><button id="copy">Copy helper code</button><p id="status" role="status">The helper runs only on the page where you paste it. Run it again after a full reload.</p><p>If Chrome blocks pasting, review the code below and follow the Console’s own instructions. If the course opens in a separate window, run it in that window.</p><details open><summary>Helper code</summary><p>Manual copy: click inside the box, press <b>Ctrl+A</b>, then <b>Ctrl+C</b>. This works even when the copy button is blocked.</p><textarea id="code" readonly aria-label="Full helper code">(() =&gt; {
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Course Helper 19.0 installer</title><style>
+body{max-width:780px;margin:40px auto;padding:0 20px;background:#101c2b;color:#f3f8ff;font:17px/1.6 system-ui}h1{font-size:32px;margin-bottom:0}p{color:#cfdeed}button{padding:12px 18px;border:1px solid #75d8c6;border-radius:9px;background:#176659;color:white;font:600 16px system-ui;cursor:pointer;margin:4px}textarea{width:100%;height:240px;background:#071321;color:#dcecff;border:1px solid #6a849d;border-radius:8px;padding:12px;box-sizing:border-box}small{display:block;color:#adc2d7}#status{min-height:2em;color:#8fe5cf}li{margin:10px 0}</style></head><body>
+<h1>Course Helper 19.0</h1><p>Install once per course page reload.</p>
+<ol><li><b>Refresh your course first</b> to remove the older helper.</li><li>Copy the code below. Open your lesson and press <b>Ctrl + Shift + J</b> for the Chrome Console.</li><li>Paste the complete code and press <b>Enter</b>. The panel should show <b>Course Helper 19.0</b>.</li><li>Click <b>Start auto</b>. Pause or Escape stops the helper.</li></ol>
+<button id="copy">Copy helper code</button><button id="select">Select all code</button><button id="download">Download plain code</button>
+<p id="status" role="status">Manual copy: click inside the code box, press Ctrl+A, then Ctrl+C.</p>
+<label for="source">Complete helper code</label><textarea id="source" readonly spellcheck="false">(() =&gt; {
   &#x27;use strict&#x27;;
-  // Recovery build: do not read, scan or change the lesson during installation.
+  const VERSION = &#x27;19.0&#x27;;
+  const KEY = &#x27;__courseHelper19&#x27;;
+  if (window[KEY]) { window[KEY].show(); return; }
+  // Refresh is recommended when replacing older builds. Stop known old timers.
   if (typeof window.__chPCStop === &#x27;function&#x27;) {
-    try { window.__chPCStop(); } catch {}
+    try { window.__chPCStop(); } catch (error) { console.warn(&#x27;Old helper cleanup:&#x27;, error); }
   }
-  const old = document.getElementById(&#x27;course-helper-recovery&#x27;);
-  if (old) old.remove();
-  const panel = document.createElement(&#x27;section&#x27;);
-  panel.id = &#x27;course-helper-recovery&#x27;;
-  panel.style.cssText = &#x27;position:fixed;right:16px;top:16px;z-index:2147483647;width:290px;padding:16px;border:1px solid #8ca1ba;border-radius:12px;background:#172435;color:white;font:14px/1.5 system-ui;box-shadow:0 8px 24px #0008&#x27;;
-  panel.innerHTML = &#x27;&lt;b&gt;Course Helper · recovery 18&lt;/b&gt;&lt;p id=&quot;chr-status&quot; role=&quot;status&quot;&gt;Installed. Paused. No course scanning until Start.&lt;/p&gt;&lt;button id=&quot;chr-start&quot;&gt;Start auto&lt;/button&gt; &lt;button id=&quot;chr-stop&quot;&gt;Pause&lt;/button&gt; &lt;button id=&quot;chr-close&quot;&gt;Close&lt;/button&gt;&lt;p style=&quot;font-size:12px&quot;&gt;Complete information pop-ups manually in this recovery build. Auto uses the course Next button.&lt;/p&gt;&#x27;;
-  (document.body || document.documentElement).appendChild(panel);
-  const status = text =&gt; { panel.querySelector(&#x27;#chr-status&#x27;).textContent = text; };
-  let timer = null, running = false, busy = false, clicks = 0;
-  const shown = el =&gt; {
-    if (!el || !el.isConnected || !el.getClientRects().length) return false;
-    const css = getComputedStyle(el);
-    return css.visibility !== &#x27;hidden&#x27; &amp;&amp; css.display !== &#x27;none&#x27;;
-  };
-  const disabled = el =&gt; el.disabled || el.hasAttribute(&#x27;disabled&#x27;) ||
-    el.getAttribute(&#x27;aria-disabled&#x27;) === &#x27;true&#x27; ||
-    !!el.closest(&#x27;.disabled,.is-disabled,.cs-disabled,[aria-disabled=&quot;true&quot;]&#x27;);
-  const pause = message =&gt; {
-    running = false;
-    clearTimeout(timer);
-    timer = null;
-    if (message) status(message);
-  };
-  function tick() {
-    if (!running || busy) return;
-    busy = true;
-    try {
-      // No recursive frame traversal, whole-page text extraction, or animations.
-      const next = document.getElementById(&#x27;next&#x27;);
-      if (!next) {
-        pause(&#x27;Next not found in this frame. Run the helper in the lesson frame.&#x27;);
-        return;
-      }
-      const question = document.querySelector(&#x27;input[type=&quot;radio&quot;],[role=&quot;radio&quot;],.quiz input,.question input&#x27;);
-      if (shown(question)) {
-        pause(&#x27;Question detected. Complete it manually, then restart Auto.&#x27;);
-        return;
-      }
-      if (!shown(next) || disabled(next)) {
-        status(&#x27;Auto: waiting for the course Next button to unlock.&#x27;);
-        return;
-      }
-      // Only inspect a small, bounded set of course timeline controls.
-      const sliders = document.querySelectorAll(&#x27;[role=&quot;slider&quot;],input[type=&quot;range&quot;]&#x27;);
-      for (let i = 0; i &lt; Math.min(sliders.length, 12); i++) {
-        const el = sliders[i];
-        const name = el.id + &#x27; &#x27; + (el.getAttribute(&#x27;aria-label&#x27;) || &#x27;&#x27;);
-        if (!/seek|timeline|progress|scrub/i.test(name) || /volume/i.test(name) || !shown(el)) continue;
-        const value = Number(el.getAttribute(&#x27;aria-valuenow&#x27;) ?? el.value);
-        const max = Number(el.getAttribute(&#x27;aria-valuemax&#x27;) ?? el.max);
-        if (Number.isFinite(value) &amp;&amp; max &gt; 0 &amp;&amp; value &lt; max - 0.01) {
-          status(&#x27;Auto: waiting for the course timeline.&#x27;);
-          return;
-        }
-      }
-      const tracks = document.querySelectorAll(&#x27;audio,video&#x27;);
-      for (let i = 0; i &lt; Math.min(tracks.length, 8); i++) {
-        const m = tracks[i];
-        if (!m.paused &amp;&amp; !m.ended) {
-          status(&#x27;Auto: waiting for narration to finish.&#x27;);
-          return;
-        }
-      }
-      next.click();
-      clicks++;
-      status(&#x27;Auto: Next clicked (&#x27; + clicks + &#x27;). Complete any required pop-ups if the course stays on this slide.&#x27;);
-    } catch (error) {
-      pause(&#x27;Auto stopped: &#x27; + error.message);
-    } finally {
-      busy = false;
-      if (running) timer = setTimeout(tick, 3000);
+  const host = document.createElement(&#x27;div&#x27;);
+  host.id = &#x27;course-helper-v19&#x27;;
+  host.style.cssText = &#x27;all:initial!important;position:fixed!important;top:16px!important;right:16px!important;z-index:2147483647!important;display:block!important;&#x27;;
+  const root = host.attachShadow({mode:&#x27;open&#x27;});
+  function make(tag, text, parent = root) {
+    const el = document.createElement(tag);
+    if (text) el.textContent = text;
+    parent.appendChild(el);
+    return el;
+  }
+  const style = make(&#x27;style&#x27;);
+  style.textContent = &#x27;:host{color-scheme:dark}*{box-sizing:border-box}.panel{width:330px;max-width:90vw;background:#142234;color:#f4f7fc;border:1px solid #66839c;border-radius:14px;box-shadow:0 8px 30px #0006;font:14px/1.5 system-ui;padding:14px}header{display:flex;align-items:center;gap:8px;cursor:move;touch-action:none}strong{flex:1}button,select{font:inherit;color:#fff;background:#293d52;border:1px solid #6d8ca8;border-radius:8px;padding:8px;cursor:pointer}button:focus-visible,select:focus-visible{outline:3px solid #8de3d5}button.primary{background:#166c60}p{margin:10px 0}nav{display:flex;gap:7px;flex-wrap:wrap}small{display:block;color:#b8cbdc}details{margin-top:10px}textarea{width:100%;height:150px;background:#0c1725;color:#fff}label{display:block;margin:10px 0}input{accent-color:#64dcc5}#status{padding:10px;background:#223449;border-radius:8px}#read{max-height:140px;overflow:auto;white-space:pre-wrap}&#x27;;
+  const panel = make(&#x27;section&#x27;); panel.className = &#x27;panel&#x27;; panel.setAttribute(&#x27;aria-label&#x27;,&#x27;Course Helper&#x27;);
+  const header = make(&#x27;header&#x27;, &#x27;&#x27;, panel);
+  make(&#x27;strong&#x27;, &#x27;Course Helper &#x27; + VERSION, header);
+  const minimize = make(&#x27;button&#x27;,&#x27;−&#x27;,header); minimize.setAttribute(&#x27;aria-label&#x27;,&#x27;Minimize&#x27;);
+  const closeButton = make(&#x27;button&#x27;,&#x27;×&#x27;,header); closeButton.setAttribute(&#x27;aria-label&#x27;,&#x27;Close helper&#x27;);
+  const body = make(&#x27;div&#x27;,&#x27;&#x27;,panel);
+  const statusEl = make(&#x27;p&#x27;,&#x27;Ready. Click Start auto when the lesson is open.&#x27;,body); statusEl.id=&#x27;status&#x27;; statusEl.setAttribute(&#x27;role&#x27;,&#x27;status&#x27;);
+  const controls = make(&#x27;nav&#x27;,&#x27;&#x27;,body);
+  const start = make(&#x27;button&#x27;,&#x27;Start auto&#x27;,controls); start.className=&#x27;primary&#x27;;
+  const pauseButton = make(&#x27;button&#x27;,&#x27;Pause&#x27;,controls);
+  const nextButton = make(&#x27;button&#x27;,&#x27;Next once&#x27;,controls);
+  const infoLabel = make(&#x27;label&#x27;,&#x27;&#x27;,body);
+  const infoToggle = make(&#x27;input&#x27;,&#x27;&#x27;,infoLabel); infoToggle.type=&#x27;checkbox&#x27;; infoToggle.checked=true;
+  infoLabel.appendChild(document.createTextNode(&#x27; Open information pop-ups automatically&#x27;));
+  const speedLabel = make(&#x27;label&#x27;,&#x27;Narration speed &#x27;,body);
+  const speedSelect = make(&#x27;select&#x27;,&#x27;&#x27;,speedLabel); speedSelect.setAttribute(&#x27;aria-label&#x27;,&#x27;Narration speed&#x27;);
+  for (const value of [1,1.5,2,3]) { const o=make(&#x27;option&#x27;,value+&#x27;×&#x27;,speedSelect);o.value=String(value); }
+  const secondary = make(&#x27;nav&#x27;,&#x27;&#x27;,body);
+  const teachClose = make(&#x27;button&#x27;,&#x27;Teach pop-up X&#x27;,secondary);
+  const reportButton = make(&#x27;button&#x27;,&#x27;Show diagnostics&#x27;,secondary);
+  const readout = make(&#x27;p&#x27;,&#x27;&#x27;,body);readout.id=&#x27;read&#x27;;
+  const reportBox = make(&#x27;textarea&#x27;,&#x27;&#x27;,body);reportBox.hidden=true;reportBox.readOnly=true;reportBox.setAttribute(&#x27;aria-label&#x27;,&#x27;Diagnostic report&#x27;);
+  make(&#x27;small&#x27;,&#x27;Auto pauses at questions and unfamiliar interactions. Pause or Escape stops it.&#x27;,body);
+  (document.body || document.documentElement).appendChild(host);
+
+  const state = {running:false,timer:null,doc:null,phase:&#x27;idle&#x27;,deadline:0,signature:&#x27;&#x27;,visited:new Set(),info:null,pending:null,closeIds:new Set([&#x27;62CBQWEhsiU&#x27;]),teachOff:null,documents:0,blockedFrames:0,checks:0,last:&#x27;Ready&#x27;,failure:&#x27;&#x27;,logs:[],closed:false};
+  const POLL=1000;
+  function tell(text) { state.last=text; if(statusEl.textContent!==text)statusEl.textContent=text; }
+  function log(text) {state.logs.push(text);if(state.logs.length&gt;12)state.logs.shift();}
+  function pause(message=&#x27;Paused. No background checks.&#x27;) {
+    state.running=false;clearTimeout(state.timer);state.timer=null;
+    if(state.teachOff)state.teachOff();
+    start.textContent=&#x27;Start auto&#x27;;tell(message);
+  }
+  function visible(el) {
+    if(!el || !el.isConnected || !el.getClientRects().length)return false;
+    const w=el.ownerDocument.defaultView;if(!w)return false;
+    for(let node=el,depth=0;node &amp;&amp; depth&lt;24;node=node.parentElement,depth++){
+      if(node.hidden)return false;
+      const css=w.getComputedStyle(node);
+      if(css.display===&#x27;none&#x27;||css.visibility===&#x27;hidden&#x27;||css.visibility===&#x27;collapse&#x27;||css.opacity===&#x27;0&#x27;)return false;
     }
+    return true;
   }
-  panel.querySelector(&#x27;#chr-start&#x27;).onclick = () =&gt; {
-    if (running) return;
-    running = true;
-    status(&#x27;Auto starting. Pause stops all checks.&#x27;);
-    timer = setTimeout(tick, 1500);
+  function disabled(el){return !el || !!el.disabled || el.hasAttribute(&#x27;disabled&#x27;) || el.getAttribute(&#x27;aria-disabled&#x27;)===&#x27;true&#x27; || !!el.closest(&#x27;.disabled,.is-disabled,.cs-disabled,[aria-disabled=&quot;true&quot;]&#x27;);}
+  function name(el){return (el.getAttribute(&#x27;aria-label&#x27;)||el.getAttribute(&#x27;data-acc-text&#x27;)||el.getAttribute(&#x27;title&#x27;)||el.textContent||&#x27;&#x27;).trim().slice(0,140);}
+  function nextIn(doc){
+    const exact=doc.getElementById(&#x27;next&#x27;);if(exact &amp;&amp; visible(exact))return exact;
+    const items=doc.querySelectorAll(&#x27;button,[role=&quot;button&quot;],a[aria-label]&#x27;);
+    for(let i=0;i&lt;Math.min(items.length,120);i++)if(/^(next|next slide|continue)(?:\s*[▶►→]|\s*\([^)]*\))?$/i.test(name(items[i]))&amp;&amp;visible(items[i]))return items[i];
+    return null;
+  }
+  function connect(){
+    const queue=[{doc:document,depth:0}],seen=new Set();let selected=null;
+    state.documents=0;state.blockedFrames=0;
+    while(queue.length &amp;&amp; seen.size&lt;12){
+      const item=queue.shift(),doc=item.doc;if(!doc||seen.has(doc))continue;seen.add(doc);state.documents++;
+      if(nextIn(doc))selected=doc;
+      if(item.depth&gt;=3)continue;
+      const frames=doc.querySelectorAll(&#x27;iframe,frame&#x27;);
+      for(let i=0;i&lt;Math.min(frames.length,12);i++){
+        if(!visible(frames[i]))continue;
+        try{const d=frames[i].contentDocument;if(d)queue.push({doc:d,depth:item.depth+1});else state.blockedFrames++;}catch{state.blockedFrames++;}
+      }
+    }
+    state.doc=selected;
+    if(!selected){pause(state.blockedFrames?&#x27;The lesson is in a protected frame. Select the lesson frame in the Console dropdown and run this code there.&#x27;:&#x27;Course Next button not found. Open a lesson, then click Start auto again.&#x27;);return false;}
+    return true;
+  }
+  function model(id){
+    if(!state.doc)return null;
+    const nodes=state.doc.querySelectorAll(&#x27;[data-model-id=&quot;&#x27;+id.replace(/[^\w-]/g,&#x27;&#x27;)+&#x27;&quot;]&#x27;);
+    for(const el of nodes)if(el.classList.contains(&#x27;slide-object-stategroup&#x27;)&amp;&amp;visible(el))return el;
+    for(const el of nodes)if(visible(el))return el;
+    const acc=state.doc.getElementById(&#x27;acc-&#x27;+id);return visible(acc)?acc:null;
+  }
+  function interact(el){
+    if(!visible(el)||disabled(el))return false;
+    const w=el.ownerDocument.defaultView;
+    let target=el;
+    if(el.matches(&#x27;[data-model-id]&#x27;)){
+      // Dispatch on the actual rendered shape, with normal bubbling to its group.
+      const shape=el.querySelector(&#x27;.eventable&#x27;);if(shape)target=shape;
+    }
+    target.dispatchEvent(new w.MouseEvent(&#x27;click&#x27;,{bubbles:true,cancelable:true,view:w}));return true;
+  }
+  function slideKey(){
+    const d=state.doc;const pieces=[];
+    const slides=d.querySelectorAll(&#x27;[data-slide-id],.slide-object-stategroup[data-model-id],.slide-object-textbox[data-model-id]&#x27;);
+    for(let i=0;i&lt;Math.min(slides.length,100)&amp;&amp;pieces.length&lt;16;i++)if(visible(slides[i]))pieces.push(slides[i].getAttribute(&#x27;data-slide-id&#x27;)||slides[i].getAttribute(&#x27;data-model-id&#x27;));
+    const txt=d.querySelectorAll(&#x27;.slide-object-textbox,.slide-object-text,.slide-title,[data-slide-number]&#x27;);
+    for(let i=0;i&lt;Math.min(txt.length,60);i++){
+      const t=(txt[i].textContent||&#x27;&#x27;).trim();if(visible(txt[i])&amp;&amp;(/^\d+\s*\/\s*\d+$/.test(t)||pieces.length&lt;2))pieces.push(t.slice(0,180));
+    }
+    if(!pieces.length){const main=d.querySelector(&#x27;main,[role=&quot;main&quot;],.slide&#x27;);if(main)pieces.push((main.textContent||&#x27;&#x27;).slice(0,500));}
+    return pieces.join(&#x27;|&#x27;);
+  }
+  function quiz(){
+    const items=state.doc.querySelectorAll(&#x27;input[type=&quot;radio&quot;],[role=&quot;radio&quot;],input[type=&quot;checkbox&quot;],[role=&quot;checkbox&quot;],button,[role=&quot;button&quot;]&#x27;);
+    for(let i=0;i&lt;Math.min(items.length,160);i++){
+      const el=items[i];if(!visible(el))continue;
+      if(el.matches(&#x27;input[type=&quot;radio&quot;],[role=&quot;radio&quot;],input[type=&quot;checkbox&quot;],[role=&quot;checkbox&quot;]&#x27;) || /^(submit(?: answer)?|check answer|try again)$/i.test(name(el)))return true;
+    }return false;
+  }
+  function popupClose(){
+    for(const id of state.closeIds){const el=model(id);if(el)return el;}
+    const els=state.doc.querySelectorAll(&#x27;[data-acc-text],button,[role=&quot;button&quot;]&#x27;);
+    for(let i=0;i&lt;Math.min(els.length,180);i++)if(/^(close(?:\s+(?:popup|pop-up|dialog|layer))?|[×✕✖])$/i.test(name(els[i]))&amp;&amp;visible(els[i]))return els[i];
+    return null;
+  }
+  function infoButtons(){
+    const out=new Map(), els=state.doc.querySelectorAll(&#x27;[data-acc-text]&#x27;);
+    for(let i=0;i&lt;Math.min(els.length,180);i++){
+      const el=els[i];if(!/^(click\s*icon|info(?:rmation)?(?:\s*icon)?)(?:\s+\d+)?$/i.test(el.getAttribute(&#x27;data-acc-text&#x27;).trim())||!visible(el))continue;
+      const group=el.closest(&#x27;.slide-object-stategroup[data-model-id]&#x27;)||el.closest(&#x27;[data-model-id]&#x27;);
+      if(group&amp;&amp;visible(group))out.set(group.getAttribute(&#x27;data-model-id&#x27;),group);
+    }
+    // The supplied slide contains eleven explicitly identified information buttons.
+    const known=[&#x27;5Yf4v0ZEHzB&#x27;,&#x27;60IE5Judeh1&#x27;,&#x27;6iTVaNjoxjp&#x27;,&#x27;5bYJcTGpH9B&#x27;,&#x27;6qlRbDy2a3S&#x27;,&#x27;5gNe0ZiHI6a&#x27;,&#x27;5YT3xfkofN0&#x27;,&#x27;5aywoV9m4Fk&#x27;,&#x27;5lhh9PFHrxy&#x27;,&#x27;6nW3CBlmFjW&#x27;,&#x27;6IMFvZXbiYL&#x27;];
+    if(!out.size &amp;&amp; known.every(id=&gt;model(id)))for(const id of known)out.set(id,model(id));
+    return [...out.keys()];
+  }
+  function lessonText(){
+    const chunks=new Set(),els=state.doc.querySelectorAll(&#x27;.slide-object-textbox,.slide-object-text,[role=&quot;dialog&quot;] p,main p&#x27;);
+    for(let i=0;i&lt;Math.min(els.length,80);i++)if(visible(els[i])){const t=(els[i].textContent||&#x27;&#x27;).trim().slice(0,1200);if(t)chunks.add(t);}
+    return [...chunks].join(&#x27;\n\n&#x27;).slice(0,12000);
+  }
+  function timeline(){
+    const els=state.doc.querySelectorAll(&#x27;[role=&quot;slider&quot;],[role=&quot;progressbar&quot;],input[type=&quot;range&quot;]&#x27;);
+    for(let i=0;i&lt;Math.min(els.length,16);i++){
+      const el=els[i];const n=el.id+&#x27; &#x27;+name(el)+&#x27; &#x27;+el.className;
+      if(!/seek|timeline|progress|scrub/i.test(n)||/volume/i.test(n)||!visible(el))continue;
+      const now=el.getAttribute(&#x27;aria-valuenow&#x27;)??(el.tagName===&#x27;INPUT&#x27;?el.value:null);
+      const max=el.getAttribute(&#x27;aria-valuemax&#x27;)??(el.tagName===&#x27;INPUT&#x27;?el.max:null);
+      if(now!==null&amp;&amp;max!==null&amp;&amp;Number(max)&gt;0)return {known:true,done:Number(now)&gt;=Number(max)-Math.max(.01,Number(max)*.001),value:now,max};
+    }return {known:false,done:false};
+  }
+  function mediaPlaying(){
+    const tracks=state.doc.querySelectorAll(&#x27;audio,video&#x27;);let playing=false;
+    for(let i=0;i&lt;Math.min(tracks.length,12);i++){
+      const m=tracks[i];if(!m.paused&amp;&amp;!m.ended){playing=true;try{if(m.playbackRate!==Number(speedSelect.value))m.playbackRate=Number(speedSelect.value);}catch{}}
+    }return playing;
+  }
+  function readPopup(){
+    const text=lessonText();readout.textContent=text;
+    state.deadline=Date.now()+Math.max(6000,Math.min(120000,text.split(/\s+/).filter(Boolean).length/300*60000));
+    state.phase=&#x27;reading&#x27;;tell(&#x27;Reading information. Auto will close it after the reading time.&#x27;);
+  }
+  function resetSlide(){state.visited.clear();state.info=null;state.pending=null;state.phase=&#x27;ready&#x27;;state.signature=slideKey();readout.textContent=&#x27;&#x27;;}
+  function step(){
+    if(!state.doc.defaultView || !state.doc.documentElement.isConnected){pause(&#x27;The lesson frame changed. Click Start auto to reconnect.&#x27;);return;}
+    if(quiz()){pause(&#x27;Question detected. Answer it yourself, then restart Auto.&#x27;);return;}
+    if(state.phase===&#x27;navigation&#x27;){
+      const after=slideKey();
+      if(after &amp;&amp; after!==state.signature){log(&#x27;Slide change confirmed&#x27;);resetSlide();tell(&#x27;Next slide confirmed.&#x27;);return;}
+      if(Date.now()&gt;state.deadline){pause(&#x27;Next was clicked, but no slide change was confirmed. Show diagnostics to see the course state.&#x27;);}
+      else tell(&#x27;Waiting for the next slide to appear…&#x27;);return;
+    }
+    const x=popupClose();
+    if(state.phase===&#x27;opening&#x27;){
+      if(x){readPopup();return;}
+      if(Date.now()&gt;state.deadline)pause(&#x27;Pop-up or its X was not recognised. Open it manually, use Teach pop-up X, then restart Auto.&#x27;);
+      return;
+    }
+    if(state.phase===&#x27;reading&#x27;){
+      if(!x){state.visited.add(state.pending);state.pending=null;state.phase=&#x27;ready&#x27;;return;}
+      if(Date.now()&lt;state.deadline){tell(&#x27;Reading information: &#x27;+Math.ceil((state.deadline-Date.now())/1000)+&#x27; seconds remaining.&#x27;);return;}
+      interact(x);state.phase=&#x27;closing&#x27;;state.deadline=Date.now()+8000;log(&#x27;Pop-up X clicked&#x27;);return;
+    }
+    if(state.phase===&#x27;closing&#x27;){
+      if(!x){state.visited.add(state.pending);state.pending=null;state.phase=&#x27;ready&#x27;;return;}
+      if(Date.now()&gt;state.deadline)pause(&#x27;The pop-up did not close. Teach pop-up X and try again.&#x27;);return;
+    }
+    if(x){if(infoToggle.checked)readPopup();else tell(&#x27;Close the information pop-up to continue.&#x27;);return;}
+    const key=slideKey();if(key &amp;&amp; key!==state.signature)resetSlide();
+    if(infoToggle.checked){
+      if(!state.info)state.info=infoButtons();
+      const id=state.info.find(item=&gt;!state.visited.has(item));
+      if(id){const el=model(id);if(!el){state.visited.add(id);return;}
+        state.pending=id;state.phase=&#x27;opening&#x27;;state.deadline=Date.now()+8000;interact(el);log(&#x27;Information button clicked&#x27;);tell(&#x27;Opening information &#x27;+(state.visited.size+1)+&#x27; of &#x27;+state.info.length+&#x27;…&#x27;);return;}
+    }
+    const time=timeline();const playing=mediaPlaying();
+    if(time.known&amp;&amp;!time.done){tell(&#x27;Waiting for the course timeline: &#x27;+time.value+&#x27; / &#x27;+time.max);return;}
+    if(!time.known&amp;&amp;playing){tell(&#x27;Waiting for narration to finish.&#x27;);return;}
+    const next=nextIn(state.doc);
+    if(!next||disabled(next)){tell(&#x27;Waiting for the course Next button to unlock. Complete any unfamiliar activity.&#x27;);return;}
+    state.signature=slideKey();interact(next);state.phase=&#x27;navigation&#x27;;state.deadline=Date.now()+12000;log(&#x27;Next clicked&#x27;);tell(&#x27;Next clicked. Checking for a slide change…&#x27;);
+  }
+  function tick(){
+    state.timer=null;if(!state.running||state.closed)return;
+    state.checks++;
+    const t=performance.now();
+    try{step();}catch(error){state.failure=String(error);pause(&#x27;Stopped after an error. Show diagnostics for details.&#x27;);}
+    const elapsed=performance.now()-t;
+    if(elapsed&gt;250){log(&#x27;Slow check: &#x27;+Math.round(elapsed)+&#x27; ms&#x27;);pause(&#x27;Paused because the course took too long to inspect. Show diagnostics.&#x27;);}
+    if(state.running)state.timer=setTimeout(tick,POLL);
+  }
+  start.onclick=()=&gt;{
+    if(state.running)return;if(state.teachOff)state.teachOff();
+    try{if(!connect())return;resetSlide();state.running=true;start.textContent=&#x27;Auto running&#x27;;tell(&#x27;Connected. Auto starts in one second.&#x27;);state.timer=setTimeout(tick,POLL);}catch(error){state.failure=String(error);pause(&#x27;Could not connect. Show diagnostics.&#x27;);}
   };
-  panel.querySelector(&#x27;#chr-stop&#x27;).onclick = () =&gt; pause(&#x27;Paused. No course scanning.&#x27;);
-  function cleanup() {
-    pause();
-    panel.remove();
-    if (window.__chPCStop === cleanup) delete window.__chPCStop;
-  }
-  panel.querySelector(&#x27;#chr-close&#x27;).onclick = cleanup;
-  window.__chPCStop = cleanup;
+  pauseButton.onclick=()=&gt;pause();
+  nextButton.onclick=()=&gt;{pause();if(!connect())return;if(quiz()){tell(&#x27;Question detected. Complete it manually.&#x27;);return;}const n=nextIn(state.doc);if(disabled(n))tell(&#x27;The course has locked Next.&#x27;);else{interact(n);tell(&#x27;Course Next clicked once.&#x27;);}};
+  teachClose.onclick=()=&gt;{
+    pause();if(!connect())return;
+    const doc=state.doc;
+    const listener=e=&gt;{
+      if(e.composedPath().includes(host))return;
+      const el=e.target.closest(&#x27;[data-model-id],[id^=&quot;acc-&quot;]&#x27;);
+      const id=el?.getAttribute(&#x27;data-model-id&#x27;)||el?.id.replace(/^acc-/,&#x27;&#x27;);
+      if(!id){tell(&#x27;Click the course pop-up X itself.&#x27;);return;}
+      state.closeIds.add(id);log(&#x27;Close control learned&#x27;);state.teachOff();tell(&#x27;X learned for this session. Click Start auto.&#x27;);
+    };
+    state.teachOff=()=&gt;{doc.removeEventListener(&#x27;click&#x27;,listener,true);state.teachOff=null;};
+    doc.addEventListener(&#x27;click&#x27;,listener,true);tell(&#x27;With the pop-up open, click its small X now.&#x27;);
+  };
+  reportButton.onclick=()=&gt;{
+    const was=state.running, previous=state.last;pause(&#x27;Paused for diagnostics.&#x27;);
+    const data={version:VERSION,wasRunning:was,phase:state.phase,previousStatus:previous,documents:state.documents,blockedFrames:state.blockedFrames,checks:state.checks,error:state.failure,log:state.logs};
+    try{if(state.doc){const n=nextIn(state.doc);data.next=n?{id:n.id,label:name(n),disabled:disabled(n)}:null;data.timeline=timeline();data.informationButtons=state.info?.length||0;data.visited=state.visited.size;}}catch(error){data.inspectionError=String(error);}
+    reportBox.hidden=false;reportBox.value=JSON.stringify(data,null,2);reportBox.focus();reportBox.select();tell(&#x27;Report selected. Press Ctrl+C to copy it.&#x27;);
+  };
+  let drag=null;
+  header.onpointerdown=e=&gt;{if(e.target.tagName===&#x27;BUTTON&#x27;)return;const r=host.getBoundingClientRect();drag={x:e.clientX-r.left,y:e.clientY-r.top};header.setPointerCapture(e.pointerId);};
+  header.onpointermove=e=&gt;{if(!drag)return;host.style.setProperty(&#x27;right&#x27;,&#x27;auto&#x27;,&#x27;important&#x27;);host.style.setProperty(&#x27;left&#x27;,Math.max(0,e.clientX-drag.x)+&#x27;px&#x27;,&#x27;important&#x27;);host.style.setProperty(&#x27;top&#x27;,Math.max(0,e.clientY-drag.y)+&#x27;px&#x27;,&#x27;important&#x27;);};
+  header.onpointerup=header.onpointercancel=()=&gt;{drag=null;};
+  minimize.onclick=()=&gt;{body.hidden=!body.hidden;minimize.textContent=body.hidden?&#x27;+&#x27;:&#x27;−&#x27;;};
+  const keydown=e=&gt;{if(e.key===&#x27;Escape&#x27;)pause();};document.addEventListener(&#x27;keydown&#x27;,keydown,true);
+  function cleanup(){pause();state.closed=true;document.removeEventListener(&#x27;keydown&#x27;,keydown,true);host.remove();delete window[KEY];if(window.__chPCStop===cleanup)delete window.__chPCStop;}
+  closeButton.onclick=cleanup;
+  window[KEY]={show(){body.hidden=false;tell(state.running?&#x27;Auto is already running.&#x27;:&#x27;Already installed. Click Start auto.&#x27;);},stop:cleanup};
+  window.__chPCStop=cleanup;
+  console.info(&#x27;Course Helper &#x27;+VERSION+&#x27; installed paused.&#x27;);
 })();
-</textarea></details><script type="application/json" id="payload">"(() => {\n  'use strict';\n  // Recovery build: do not read, scan or change the lesson during installation.\n  if (typeof window.__chPCStop === 'function') {\n    try { window.__chPCStop(); } catch {}\n  }\n  const old = document.getElementById('course-helper-recovery');\n  if (old) old.remove();\n  const panel = document.createElement('section');\n  panel.id = 'course-helper-recovery';\n  panel.style.cssText = 'position:fixed;right:16px;top:16px;z-index:2147483647;width:290px;padding:16px;border:1px solid #8ca1ba;border-radius:12px;background:#172435;color:white;font:14px/1.5 system-ui;box-shadow:0 8px 24px #0008';\n  panel.innerHTML = '\u003cb>Course Helper \u00b7 recovery 18\u003c/b>\u003cp id=\"chr-status\" role=\"status\">Installed. Paused. No course scanning until Start.\u003c/p>\u003cbutton id=\"chr-start\">Start auto\u003c/button> \u003cbutton id=\"chr-stop\">Pause\u003c/button> \u003cbutton id=\"chr-close\">Close\u003c/button>\u003cp style=\"font-size:12px\">Complete information pop-ups manually in this recovery build. Auto uses the course Next button.\u003c/p>';\n  (document.body || document.documentElement).appendChild(panel);\n  const status = text => { panel.querySelector('#chr-status').textContent = text; };\n  let timer = null, running = false, busy = false, clicks = 0;\n  const shown = el => {\n    if (!el || !el.isConnected || !el.getClientRects().length) return false;\n    const css = getComputedStyle(el);\n    return css.visibility !== 'hidden' && css.display !== 'none';\n  };\n  const disabled = el => el.disabled || el.hasAttribute('disabled') ||\n    el.getAttribute('aria-disabled') === 'true' ||\n    !!el.closest('.disabled,.is-disabled,.cs-disabled,[aria-disabled=\"true\"]');\n  const pause = message => {\n    running = false;\n    clearTimeout(timer);\n    timer = null;\n    if (message) status(message);\n  };\n  function tick() {\n    if (!running || busy) return;\n    busy = true;\n    try {\n      // No recursive frame traversal, whole-page text extraction, or animations.\n      const next = document.getElementById('next');\n      if (!next) {\n        pause('Next not found in this frame. Run the helper in the lesson frame.');\n        return;\n      }\n      const question = document.querySelector('input[type=\"radio\"],[role=\"radio\"],.quiz input,.question input');\n      if (shown(question)) {\n        pause('Question detected. Complete it manually, then restart Auto.');\n        return;\n      }\n      if (!shown(next) || disabled(next)) {\n        status('Auto: waiting for the course Next button to unlock.');\n        return;\n      }\n      // Only inspect a small, bounded set of course timeline controls.\n      const sliders = document.querySelectorAll('[role=\"slider\"],input[type=\"range\"]');\n      for (let i = 0; i \u003c Math.min(sliders.length, 12); i++) {\n        const el = sliders[i];\n        const name = el.id + ' ' + (el.getAttribute('aria-label') || '');\n        if (!/seek|timeline|progress|scrub/i.test(name) || /volume/i.test(name) || !shown(el)) continue;\n        const value = Number(el.getAttribute('aria-valuenow') ?? el.value);\n        const max = Number(el.getAttribute('aria-valuemax') ?? el.max);\n        if (Number.isFinite(value) && max > 0 && value \u003c max - 0.01) {\n          status('Auto: waiting for the course timeline.');\n          return;\n        }\n      }\n      const tracks = document.querySelectorAll('audio,video');\n      for (let i = 0; i \u003c Math.min(tracks.length, 8); i++) {\n        const m = tracks[i];\n        if (!m.paused && !m.ended) {\n          status('Auto: waiting for narration to finish.');\n          return;\n        }\n      }\n      next.click();\n      clicks++;\n      status('Auto: Next clicked (' + clicks + '). Complete any required pop-ups if the course stays on this slide.');\n    } catch (error) {\n      pause('Auto stopped: ' + error.message);\n    } finally {\n      busy = false;\n      if (running) timer = setTimeout(tick, 3000);\n    }\n  }\n  panel.querySelector('#chr-start').onclick = () => {\n    if (running) return;\n    running = true;\n    status('Auto starting. Pause stops all checks.');\n    timer = setTimeout(tick, 1500);\n  };\n  panel.querySelector('#chr-stop').onclick = () => pause('Paused. No course scanning.');\n  function cleanup() {\n    pause();\n    panel.remove();\n    if (window.__chPCStop === cleanup) delete window.__chPCStop;\n  }\n  panel.querySelector('#chr-close').onclick = cleanup;\n  window.__chPCStop = cleanup;\n})();\n"</script><script>
-const code=JSON.parse(document.getElementById('payload').textContent);
-const field=document.getElementById('code');
-const result=document.getElementById('status');
-function selectCode(){field.focus();field.select();field.setSelectionRange(0,field.value.length);}
-document.getElementById('copy').onclick=()=>{
-  // Synchronous fallback keeps the click's user activation on local files.
-  selectCode();
-  let copied=false;
-  try{copied=document.execCommand('copy');}catch{}
-  if(copied){result.textContent='Copied. Paste into your course Console and press Enter.';return;}
-  if(navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(code).then(()=>{result.textContent='Copied. Paste into your course Console and press Enter.';},()=>{selectCode();result.textContent='Code selected. Press Ctrl+C (Mac: Command+C), then paste into your course Console.';});
-  }else{result.textContent='Code selected. Press Ctrl+C (Mac: Command+C), then paste into your course Console.';}
-};
-</script></html>
+</textarea>
+<small>If you are viewing this in ChatGPT, download the HTML and open it in Chrome. The code box remains usable even when scripts are blocked.</small>
+<details><summary>What to expect</summary><p>The helper starts paused, finds accessible lesson frames, opens recognised information buttons, waits while you read, closes their pop-ups, and waits for the course timeline and Next control. It pauses at questions and if navigation cannot be confirmed.</p><p>For a different close icon, leave the pop-up open, choose <b>Teach pop-up X</b>, click the course X, and restart Auto. Other unrecognised activities need manual interaction.</p><p>If it stops, click <b>Show diagnostics</b>. Copy the selected report back into this chat. It includes control states, not your lesson text or login details.</p></details>
+<script>
+const field=document.getElementById('source'),status=document.getElementById('status');
+function select(){field.focus();field.select();field.setSelectionRange(0,field.value.length);}
+document.getElementById('select').onclick=()=>{select();status.textContent='Code selected. Press Ctrl+C, then paste into the course Console.';};
+document.getElementById('copy').onclick=()=>{select();let copied=false;try{copied=document.execCommand('copy');}catch{}if(copied){status.textContent='Copied. Paste into your course Console and press Enter.';return;}if(navigator.clipboard?.writeText){navigator.clipboard.writeText(field.value).then(()=>status.textContent='Copied. Paste into your course Console and press Enter.',()=>{select();status.textContent='Press Ctrl+C to copy the selected code.';});}else{status.textContent='Press Ctrl+C to copy the selected code.';}};
+document.getElementById('download').onclick=()=>{const blob=new Blob([field.value],{type:'text/plain;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='Course-Helper-19-Code.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);};
+</script></body></html>
