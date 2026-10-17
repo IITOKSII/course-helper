@@ -1,1 +1,677 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Course Helper installer</title><style>body{margin:40px auto;max-width:720px;padding:20px;background:#111925;color:#edf4ff;font:17px/1.6 system-ui}button{background:#64e0c1;border:0;border-radius:12px;padding:16px 24px;font:700 18px system-ui;cursor:pointer}textarea{width:100%;height:180px;background:#202d40;color:white;margin-top:24px}h1{line-height:1.1}#status{color:#92e8cf}</style><h1>Course Helper</h1><p>Install directly. Click <b>Start auto</b> in the helper to advance after slide media ends. Text-only slides use the reading timer. Quizzes pause Auto.</p><ol><li>Open your course and the lesson.</li><li>Click <b>Copy helper code</b> below.</li><li>Return to the course. Press <b>Ctrl + Shift + J</b> to open Chrome’s Console.</li><li>Paste the code and press <b>Enter</b>.</li></ol><button id="copy">Copy helper code</button><p id="status" role="status">The helper runs only on the page where you paste it. Run it again after a full reload.</p><p>If Chrome blocks pasting, review the code below and follow the Console’s own instructions. If the course opens in a separate window, run it in that window.</p><details><summary>View code / manual copy</summary><textarea id="code" readonly aria-label="Full helper code"></textarea></details><script type="application/json" id="payload">"(() => {\n  'use strict';\n\n  if (typeof window.__chPCStop === 'function') {\n    window.__chPCStop();\n  }\n\n  const state = {\n    auto: false,\n    speed: 3,\n    wpm: 600,\n    timer: null,\n    tick: null,\n    keyboard: false,\n    lastExpandedHeight: 540,\n    pendingNarration: false,\n    epoch: 0,\n    delays: new Set(),\n    lastSlide: '',\n    busy: false,\n    scormState: 'Unknown'\n  };\n\n  const panel = document.createElement('section');\n  panel.id = 'course-helper-pc';\n\n  panel.style.cssText = `\n    all: initial;\n    position: fixed;\n    top: 20px;\n    right: 20px;\n    width: 390px;\n    height: 540px;\n    min-width: 260px;\n    min-height: 48px;\n    max-width: 95vw;\n    max-height: 90vh;\n    z-index: 2147483647;\n    background: #17191e;\n    color: #fff;\n    border: 1px solid #7e8999;\n    border-radius: 10px;\n    resize: both;\n    overflow: hidden;\n    box-shadow: 0 8px 30px #0009;\n    font: 14px Arial, sans-serif;\n  `;\n\n  panel.innerHTML = `\n    \u003cdiv id=\"ch-head\" style=\"display:flex;justify-content:space-between;align-items:center;background:#2a3341;padding:12px;cursor:move;user-select:none\">\n      \u003cb>Course Helper PC\u003c/b>\n      \u003cspan>\n        \u003cbutton id=\"ch-min\">\u2212\u003c/button>\n        \u003cbutton id=\"ch-close\">\u00d7\u003c/button>\n      \u003c/span>\n    \u003c/div>\n\n    \u003cdiv id=\"ch-body\" style=\"height:calc(100% - 48px);overflow:auto;padding:12px;box-sizing:border-box\">\n      \u003cdiv id=\"ch-alert\" role=\"status\" style=\"padding:10px;background:#394258;margin-bottom:10px;border-radius:6px\">\n        Checking current lesson\u2026\n      \u003c/div>\n\n      \u003cdiv style=\"display:flex;gap:7px;flex-wrap:wrap\">\n        \u003cbutton id=\"ch-prev\">\u25c0 Back\u003c/button>\n        \u003cbutton id=\"ch-paragraph\">Finish paragraph\u003c/button>\n        \u003cbutton id=\"ch-next\">Next \u25b6\u003c/button>\n      \u003c/div>\n\n      \u003cbutton id=\"ch-auto\" style=\"width:100%;margin-top:10px;padding:10px;font-weight:bold\">\n        Start auto\n      \u003c/button>\n\n      \u003cp>\n        \u003clabel>\n          Reading rate \u003coutput id=\"ch-rate-label\">600\u003c/output> wpm\n          \u003cinput id=\"ch-rate\" type=\"range\" min=\"200\" max=\"1200\" step=\"100\" value=\"600\" style=\"width:100%\">\n        \u003c/label>\n      \u003c/p>\n\n      \u003cp>\n        Media speed\n        \u003cselect id=\"ch-speed\">\n          \u003coption>1\u003c/option>\n          \u003coption>1.5\u003c/option>\n          \u003coption>2\u003c/option>\n          \u003coption selected>3\u003c/option>\n          \u003coption>4\u003c/option>\n        \u003c/select> \u00d7\n      \u003c/p>\n\n      \u003clabel>\n        \u003cinput id=\"ch-keys\" type=\"checkbox\">\n        Keyboard: Alt+\u2192 next, Alt+\u2190 back, Alt+\u2193 finish\n      \u003c/label>\n\n      \u003cdetails open>\n        \u003csummary>Visible slide text\u003c/summary>\n        \u003cdiv id=\"ch-text\" style=\"margin-top:8px;white-space:pre-wrap;line-height:1.5;max-height:220px;overflow:auto\">\u003c/div>\n        \u003cbutton id=\"ch-refresh\">Refresh text\u003c/button>\n      \u003c/details>\n\n      \u003cdetails>\n        \u003csummary>Quiz help (visible questions)\u003c/summary>\n        \u003cp>Quizzes are detected when visible. Auto pauses for questions. Review answers and submit yourself.\u003c/p>\n        \u003cbutton id=\"ch-copy\">Copy visible question text\u003c/button>\n        \u003cbutton id=\"ch-suggest\">Find lesson clues\u003c/button>\n        \u003cbutton id=\"ch-preview\">Upcoming quizzes\u003c/button>\n        \u003cdiv id=\"ch-preview-result\" role=\"status\" style=\"white-space:pre-wrap;font-size:12px;margin-top:8px\">\u003c/div>\n        \u003cdiv id=\"ch-clues\" style=\"white-space:pre-wrap;font-size:12px;line-height:1.45;margin-top:8px\">\u003c/div>\n      \u003c/details>\n\n      \u003cdetails>\u003csummary>Completion and diagnostics\u003c/summary>\n        \u003cbutton id=\"ch-check\">Check completion\u003c/button>\n        \u003cbutton id=\"ch-diagnose\">Diagnostics\u003c/button>\n        \u003cdiv id=\"ch-diagnostic-result\" role=\"status\" style=\"white-space:pre-wrap;font-size:12px;margin-top:8px\">\u003c/div>\n      \u003c/details>\n      \u003cp id=\"ch-status\" role=\"status\" style=\"font-size:12px;color:#c7d5e5\">\n        Ready. Resize by dragging the bottom-right corner.\n      \u003c/p>\n    \u003c/div>\n  `;\n\n\n  // Scoped styles: preserve host page appearance and provide visible focus states.\n  const theme = document.createElement('style');\n  theme.id = 'course-helper-pc-theme';\n  theme.textContent = `\n    #course-helper-pc { color-scheme: dark; font-family: Inter, system-ui, -apple-system, \"Segoe UI\", sans-serif !important; line-height: 1.5; border-radius: 16px !important; border: 1px solid #66758a !important; box-shadow: 0 18px 48px rgba(0,0,0,.48) !important; }\n    #course-helper-pc, #course-helper-pc * { box-sizing: border-box; }\n    #course-helper-pc button, #course-helper-pc select { font: inherit; background: #2b384b; color: #fff; border: 1px solid #62758c; border-radius: 9px; padding: 9px 12px; min-height: 40px; cursor: pointer; transition: background .15s ease, border-color .15s ease; }\n    #course-helper-pc button:hover { background: #3b4d64; }\n    #course-helper-pc button:active { background: #475e79; }\n    #course-helper-pc :is(button,select,input,summary):focus-visible { outline: 3px solid #7bd4fa; outline-offset: 3px; }\n    #course-helper-pc #ch-head { background: #202d41 !important; border-bottom: 1px solid #46586d; height: 48px; }\n    #course-helper-pc #ch-auto { background: #1b6a63; border-color: #65c7ba; }\n    #course-helper-pc #ch-auto:hover { background: #247e75; }\n    #course-helper-pc #ch-paragraph { background: #34577e; border-color: #8ab4e2; }\n    #course-helper-pc #ch-alert { font-weight: 650; letter-spacing: .01em; }\n    #course-helper-pc details { background: #202a39; border: 1px solid #465467; border-radius: 10px; padding: 12px; margin: 12px 0; }\n    #course-helper-pc summary { cursor: pointer; padding: 4px 0; font-weight: 650; }\n    #course-helper-pc input[type=\"range\"] { accent-color: #7bd4fa; min-height: 28px; }\n    #course-helper-pc input[type=\"checkbox\"] { accent-color: #7bd4fa; width: 17px; height: 17px; vertical-align: middle; }\n    #course-helper-pc #ch-status { padding: 10px; border-radius: 9px; background: #263449; color: #f0f6ff !important; font-size: 13px !important; }\n    #course-helper-pc #ch-text { font-size: 14px; line-height: 1.65 !important; }\n    #course-helper-pc #ch-head button { min-width: 38px; min-height: 32px; padding: 3px 9px; }\n    @media (prefers-reduced-motion: reduce) { #course-helper-pc button { transition: none; } }\n  `;\n  document.head.appendChild(theme);\n  panel.setAttribute('aria-label', 'Course Helper');\n  panel.setAttribute('role', 'region');\n  panel.querySelector('#ch-min').setAttribute('aria-label', 'Minimize or restore Course Helper');\n  panel.querySelector('#ch-close').setAttribute('aria-label', 'Close Course Helper');\n  panel.querySelector('#ch-rate').setAttribute('aria-label', 'Reading speed in words per minute');\n  panel.querySelector('#ch-speed').setAttribute('aria-label', 'Media playback speed');\n  panel.querySelector('#ch-alert').setAttribute('aria-live', 'polite');\n  panel.querySelector('#ch-status').setAttribute('aria-live', 'polite');\n  // Distinct navigation controls are easier to identify at a glance.\n  panel.querySelector('#ch-next').title = 'Advance to the next slide when available';\n  panel.querySelector('#ch-paragraph').title = 'Finish the current accessible narration';\n\n  document.body.append(panel);\n\n  const $ = id => panel.querySelector('#' + id);\n\n  const later = (fn, ms) => { const id = setTimeout(() => { state.delays.delete(id); if (panel.isConnected) fn(); }, ms); state.delays.add(id); return id; };\n\n  const docs = () => {\n    const out = [];\n    const visit = doc => {\n      if (!doc || out.includes(doc)) return;\n      out.push(doc);\n      for (const frame of doc.querySelectorAll('iframe,frame')) {\n        try { visit(frame.contentDocument); } catch {}\n      }\n    };\n    visit(document);\n    return out;\n  };\n\n  const visible = el => {\n    if (panel.contains(el) || !el.getClientRects().length) return false;\n    const view = el.ownerDocument.defaultView;\n    if (!view || view.getComputedStyle(el).visibility === 'hidden') return false;\n    try {\n      const frame = view.frameElement;\n      if (frame && !visible(frame)) return false;\n    } catch {}\n    return true;\n  };\n\n  const label = el =>\n    (\n      el.getAttribute('aria-label') ||\n      el.innerText ||\n      el.textContent ||\n      el.value ||\n      ''\n    ).trim().toLowerCase();\n\n  function assessment() {\n    for (const doc of docs()) {\n      const quizText = [...doc.querySelectorAll('main, article, [role=main], .slide, .question, .quiz')]\n        .filter(el => visible(el) && !panel.contains(el))\n        .map(el => el.innerText || '').join(' ').slice(0,18000).toLowerCase();\n\n      const answerInputs = [...doc.querySelectorAll('input[type=radio],input[type=checkbox],[role=radio],[role=checkbox]')].some(visible);\n      const actionButtons = [...doc.querySelectorAll('button,[role=button],input[type=submit]')]\n        .filter(visible).some(el => /^(submit|check answer|try again|show answer|submit answer)/i.test(label(el)));\n      const questionPhrases = /(select the correct|which of the following|choose the correct|true or false|submit answer|check answer)/.test(quizText);\n      // Labels and course-menu mentions alone do not block progress.\n      if (answerInputs || actionButtons || questionPhrases) return true;\n    }\n\n    return false;\n  }\n\n  function readCompletion() {\n    // Read-only status; do not manipulate SCORM progress.\n    const lines = [];\n    const seen = new Set();\n    let current = window;\n    for (let depth = 0; depth \u003c 6 && current; depth++) {\n      try {\n        for (const key of ['API_1484_11', 'API']) {\n          const api = current[key];\n          if (!api || seen.has(api)) continue;\n          seen.add(api);\n          try {\n            if (key === 'API_1484_11' && typeof api.GetValue === 'function') {\n              lines.push('SCORM 2004 completion: ' + (api.GetValue('cmi.completion_status') || 'unknown'));\n              lines.push('SCORM 2004 success: ' + (api.GetValue('cmi.success_status') || 'unknown'));\n            } else if (key === 'API' && typeof api.LMSGetValue === 'function') {\n              lines.push('SCORM 1.2 lesson status: ' + (api.LMSGetValue('cmi.core.lesson_status') || 'unknown'));\n            }\n          } catch { lines.push('SCORM API located but status was inaccessible'); }\n        }\n        if (current.parent === current) break;\n        current = current.parent;\n      } catch { break; }\n    }\n    const visibleStatus = docs().flatMap(d => [...d.querySelectorAll('[role=status],.completion-status,.course-status')])\n      .filter(visible).map(el => (el.innerText || '').trim()).filter(Boolean).slice(0,5);\n    if (visibleStatus.length) lines.push('Visible status: ' + visibleStatus.join(' | ').slice(0,350));\n    if (!lines.length) lines.push('No accessible completion status. Verify in the learner dashboard.');\n    return lines.join('\\n');\n  }\n\n  function upcomingQuiz() {\n    const results = [];\n    for (const doc of docs()) {\n      for (const el of doc.querySelectorAll('nav a,aside a,[role=navigation] a,.toc li,.menu li')) {\n        if (!visible(el)) continue;\n        const t = (el.innerText || '').trim();\n        if (t.length \u003c 160 && /(quiz|knowledge check|assessment|test)/i.test(t)) results.push(t);\n      }\n    }\n    return [...new Set(results)].slice(0,6);\n  }\n\n  function diagnose() {\n    return [\n      'Helper: loaded',\n      'Accessible documents: ' + docs().length,\n      'Media found: ' + media().length,\n      'Words shown: ' + refresh(),\n      'Quiz or interaction: ' + (assessment() ? 'possibly detected' : 'not detected'),\n      'Slide signature: ' + (slideSignature() ? 'available' : 'not available'),\n      readCompletion()\n    ].join('\\n');\n  }\n\n  function status(message) {\n    $('ch-status').textContent = message;\n  }\n\n  function refresh() {\n    const chunks = [];\n\n    for (const doc of docs()) {\n      for (const el of doc.querySelectorAll('main p,article p,[role=main] p,.slide p,h1,h2,h3')) {\n        if (visible(el) && !panel.contains(el)) {\n          let t = (el.innerText || '').trim();\n\n          if (\n            t.length > 15 &&\n            t.length \u003c 2500 &&\n            !chunks.includes(t)\n          ) {\n            chunks.push(t);\n          }\n        }\n      }\n    }\n\n    $('ch-text').textContent =\n      chunks.slice(0, 30).join('\\n\\n') ||\n      'No readable text detected in this slide.';\n\n    return chunks.join(' ').split(/\\s+/).filter(Boolean).length;\n  }\n\n  function slideSignature() {\n    return docs().map(doc => [...doc.querySelectorAll('main,article,[role=main],.slide')]\n      .filter(visible).map(el => (el.innerText || '').trim().slice(0,800)).join('|')).join('||');\n  }\n\n  function media() {\n    return docs()\n      .flatMap(d => [...d.querySelectorAll('audio,video')])\n      .filter(m => !panel.contains(m));\n  }\n\n  function speed() {\n    for (const m of media()) {\n      try {\n        m.playbackRate = state.speed;\n      } catch {}\n    }\n  }\n\n  function finish() {\n    if (assessment()) {\n      stop('Quiz or interaction detected. Complete it manually.');\n      return false;\n    }\n\n    let count = 0;\n\n    for (const m of media()) {\n      try {\n        if (\n          Number.isFinite(m.duration) &&\n          m.duration > 0\n        ) {\n          m.currentTime = Math.max(0, m.duration - .05);\n          count++;\n        }\n      } catch {}\n    }\n\n    if (count) state.pendingNarration = true;\n    status(\n      count\n        ? `Finished ${count} media segment(s).`\n        : 'No accessible media timeline. Use the platform controls.'\n    );\n\n    later(refresh, 450);\n    return count > 0;\n  }\n\n  function nav(dir) {\n    if (assessment()) {\n      stop('Question or interaction detected. Complete it manually.');\n      return false;\n    }\n    const terms = dir === 'next' ? ['next','continue','next slide'] : ['back','previous','previous slide'];\n    const candidates = [];\n    for (const doc of docs()) {\n      for (const el of doc.querySelectorAll('button,a,[role=\"button\"],input[type=\"button\"]')) {\n        if (!visible(el) || el.disabled || el.getAttribute('aria-disabled') === 'true') continue;\n        const name = label(el);\n        if (!terms.some(t => name === t || name.startsWith(t + ' '))) continue;\n        const context = el.closest('main,article,[role=main],.slide,.content,.player');\n        candidates.push({el, score: (context ? 10 : 0) + (name === terms[0] ? 2 : 0)});\n      }\n    }\n    candidates.sort((a,b)=>b.score-a.score);\n    if (!candidates.length) {\n      status('No available ' + dir + ' control. Use course navigation.');\n      return false;\n    }\n    if (candidates.length > 1 && candidates[0].score === candidates[1].score) {\n      status('Several navigation buttons found. Use the course Next/Back control to avoid the wrong action.');\n      return false;\n    }\n    const before = slideSignature();\n    candidates[0].el.click();\n    state.pendingNarration = false;\n    later(() => {\n      refresh();\n      if (slideSignature() === before) {\n        status('Navigation attempted but slide change not confirmed. Check course page.');\n        if (state.auto) stop('Auto stopped: slide change not confirmed.');\n      } else {\n        status('Slide content changed. Check LMS progress separately.');\n      }\n    }, 900);\n    return true;\n  }\n\n  function stop(reason) {\n    state.auto = false;\n    clearTimeout(state.timer);\n    state.epoch++;\n\n    $('ch-auto').textContent = 'Start auto';\n\n    if (reason) {\n      status(reason);\n    }\n  }\n\n  function cycle() {\n    if (!state.auto) return;\n    const epoch = state.epoch;\n    let signature = slideSignature();\n    let started = Date.now();\n    let observedMedia = new Set();\n\n    const check = () => {\n      if (!state.auto || epoch !== state.epoch) return;\n      if (assessment()) {\n        stop('Quiz or interaction detected. Complete it manually.');\n        return;\n      }\n      const current = slideSignature();\n      if (current !== signature) {\n        signature = current;\n        started = Date.now();\n        observedMedia.clear();\n      }\n      const words = refresh();\n      // Visible video and playing/previously played audio belong to the active\n      // slide. Do not wait for hidden, untouched media from other slides.\n      const tracks = media().filter(m =>\n        visible(m) || (!m.paused && !m.ended) ||\n        (m.currentTime > 0 && !m.ended) || observedMedia.has(m)\n      );\n      tracks.forEach(m => observedMedia.add(m));\n      const readingMs = Math.max(3000, Math.ceil(words / state.wpm * 60000));\n      const elapsed = Date.now() - started;\n      if (tracks.length) {\n        if (!tracks.every(m => m.ended)) {\n          status('Auto: waiting for slide media to finish. Play it if paused.');\n          state.timer = setTimeout(check, 500);\n          return;\n        }\n        // Give the course time to enable Next after its media-ended handler.\n        if (elapsed \u003c 1000) {\n          state.timer = setTimeout(check, 500);\n          return;\n        }\n      } else if (!words) {\n        if (elapsed >= 15000) {\n          stop('No accessible slide text or media. Use the course controls.');\n          return;\n        }\n        status('Auto: waiting for slide content to load\u2026');\n        state.timer = setTimeout(check, 500);\n        return;\n      } else if (elapsed \u003c readingMs) {\n        status('Auto: reading slide; ' + Math.ceil((readingMs - elapsed) / 1000) + 's remaining.');\n        state.timer = setTimeout(check, 500);\n        return;\n      }\n      if (nav('next')) {\n        state.timer = setTimeout(cycle, 1200);\n      } else {\n        stop('Next unavailable. Complete any slide interaction or check course completion.');\n      }\n    };\n    check();\n  }\n\n  $('ch-prev').onclick = () => {\n    stop();\n    state.pendingNarration = false;\n    nav('previous');\n  };\n\n  $('ch-paragraph').onclick = () => {\n    stop();\n    finish();\n  };\n\n  $('ch-next').onclick = () => {\n    stop();\n    if (assessment()) return status('Quiz or interaction detected. Complete it manually.');\n    if (state.pendingNarration) {\n      state.pendingNarration = false;\n      nav('next');\n    } else if (!finish()) nav('next');\n  };\n\n  $('ch-auto').onclick = () => {\n    if (state.auto) {\n      stop('Paused');\n      return;\n    }\n\n    state.auto = true;\n    $('ch-auto').textContent = 'Pause auto';\n    cycle();\n  };\n\n  $('ch-refresh').onclick = refresh;\n\n  $('ch-rate').oninput = e => {\n    state.wpm = +e.target.value;\n    $('ch-rate-label').textContent = state.wpm;\n  };\n\n  $('ch-speed').onchange = e => {\n    state.speed = +e.target.value;\n    speed();\n  };\n\n  $('ch-keys').onchange = e => {\n    state.keyboard = e.target.checked;\n  };\n\n  $('ch-preview').onclick = () => {\n    const hits = upcomingQuiz();\n    $('ch-preview-result').textContent = hits.length\n      ? 'Possible quizzes in visible navigation:\\n\u2022 ' + hits.join('\\n\u2022 ')\n      : 'No upcoming quiz visible in accessible course navigation; not a guarantee.';\n  };\n  $('ch-check').onclick = () => { $('ch-diagnostic-result').textContent = readCompletion(); };\n  $('ch-diagnose').onclick = () => { $('ch-diagnostic-result').textContent = diagnose(); };\n\n  $('ch-suggest').onclick = () => {\n    const text = docs().map(d => d.body?.innerText || '').join('\\n');\n    const lines = text.split('\\n').map(x=>x.trim()).filter(x=>x.length>20 && x.length\u003c500);\n    const hints = lines.filter(x => /(because|therefore|means|defined|refers to|is the|are the|important|remember|correct)/i.test(x)).slice(0,12);\n    $('ch-clues').textContent = hints.length ? 'Possible lesson clues (not verified answers):\\n\u2022 ' + hints.join('\\n\u2022 ') : 'No answer clues found in visible lesson text. Use Copy visible question text to research the answer.';\n  };\n\n  $('ch-copy').onclick = async () => {\n    let text = docs().flatMap(d => [...d.querySelectorAll('main,article,[role=main],.slide,.question')].filter(visible).map(e => e.innerText || '')).join('\\n').slice(0,15000);\n\n    try {\n      await navigator.clipboard.writeText(text);\n      status(\n        'Visible text copied. Clipboard may persist after closing.'\n      );\n    } catch {\n      status('Clipboard access blocked.');\n    }\n  };\n\n  let minimized = false;\n\n  $('ch-min').onclick = () => {\n    if (!minimized) {\n      state.lastExpandedHeight = panel.getBoundingClientRect().height;\n    }\n    minimized = !minimized;\n    $('ch-body').style.display = minimized ? 'none' : 'block';\n    panel.style.resize = minimized ? 'none' : 'both';\n    panel.style.height = minimized\n      ? '48px'\n      : Math.min(state.lastExpandedHeight, innerHeight * 0.9) + 'px';\n    $('ch-min').textContent = minimized ? '\u25a1' : '\u2212';\n    $('ch-min').title = minimized ? 'Restore panel' : 'Minimize panel';\n  };\n\n  let drag = null;\n  const head = $('ch-head');\n\n  head.addEventListener('pointerdown', e => {\n    if (e.target.closest('button')) return;\n\n    const rect = panel.getBoundingClientRect();\n\n    drag = {\n      dx: e.clientX - rect.left,\n      dy: e.clientY - rect.top,\n      id: e.pointerId\n    };\n\n    head.setPointerCapture(e.pointerId);\n    e.preventDefault();\n  });\n\n  head.addEventListener('pointermove', e => {\n    if (!drag || drag.id !== e.pointerId) return;\n\n    panel.style.right = 'auto';\n\n    panel.style.left =\n      Math.max(\n        0,\n        Math.min(\n          innerWidth - panel.offsetWidth,\n          e.clientX - drag.dx\n        )\n      ) + 'px';\n\n    panel.style.top =\n      Math.max(\n        0,\n        Math.min(\n          innerHeight - panel.offsetHeight,\n          e.clientY - drag.dy\n        )\n      ) + 'px';\n  });\n\n  head.addEventListener('pointerup', () => drag = null);\n  head.addEventListener('pointercancel', () => drag = null);\n\n  function keys(e) {\n    if (\n      !state.keyboard ||\n      !e.altKey ||\n      e.ctrlKey ||\n      e.metaKey ||\n      e.repeat ||\n      e.target.closest?.(\n        'input,textarea,select,[contenteditable]'\n      )\n    ) {\n      return;\n    }\n\n    if (e.key === 'ArrowRight') {\n      e.preventDefault();\n      stop();\n      $('ch-next').click();\n    } else if (e.key === 'ArrowLeft') {\n      e.preventDefault();\n      stop();\n      nav('previous');\n    } else if (e.key === 'ArrowDown') {\n      e.preventDefault();\n      stop();\n      finish();\n    }\n  }\n\n  document.addEventListener('keydown', keys, true);\n\n  state.tick = setInterval(() => {\n    $('ch-alert').textContent = assessment()\n      ? 'QUIZ / INTERACTION DETECTED. Auto will pause.'\n      : 'CONTENT SLIDE. Quiz not currently detected.';\n\n    speed();\n  }, 1000);\n\n  function cleanup() {\n    stop();\n    state.pendingNarration = false;\n    clearInterval(state.tick);\n    for (const id of state.delays) clearTimeout(id);\n    state.delays.clear();\n    document.removeEventListener('keydown', keys, true);\n    panel.remove();\n    document.getElementById('course-helper-pc-theme')?.remove();\n    delete window.__chPCStop;\n  }\n\n  $('ch-close').onclick = cleanup;\n  window.__chPCStop = cleanup;\n\n  refresh();\n  speed();\n\n  status('Ready. Direct install active. Open Diagnostics if lesson content is missing.');\n})();\n"</script><script>const code=JSON.parse(document.getElementById('payload').textContent);document.getElementById('code').value=code;document.getElementById('copy').onclick=async()=>{try{await navigator.clipboard.writeText(code);document.getElementById('status').textContent='Copied. Paste into your course Console and press Enter.'}catch{document.querySelector('details').open=true;const t=document.getElementById('code');t.focus();t.select();document.getElementById('status').textContent='Press Ctrl+C to copy the selected code, then paste into your course Console.'}};</script></html>
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Course Helper installer</title><style>body{margin:40px auto;max-width:720px;padding:20px;background:#111925;color:#edf4ff;font:17px/1.6 system-ui}button{background:#64e0c1;border:0;border-radius:12px;padding:16px 24px;font:700 18px system-ui;cursor:pointer}textarea{width:100%;height:180px;background:#202d40;color:white;margin-top:24px}h1{line-height:1.1}#status{color:#92e8cf}</style><h1>Course Helper</h1><p><b>Download this file and open it in Chrome.</b> The ChatGPT file preview may block buttons and clipboard access.</p><p>Install directly. Click <b>Start auto</b> in the helper to advance after slide media ends. Text-only slides use the reading timer. Quizzes pause Auto.</p><ol><li>Open your course and the lesson.</li><li>Click <b>Copy helper code</b> below, or click inside the code box and press <b>Ctrl+A</b>, then <b>Ctrl+C</b>.</li><li>Return to the course. Press <b>Ctrl + Shift + J</b> to open Chrome’s Console.</li><li>Paste the code and press <b>Enter</b>.</li></ol><button id="copy">Copy helper code</button><p id="status" role="status">The helper runs only on the page where you paste it. Run it again after a full reload.</p><p>If Chrome blocks pasting, review the code below and follow the Console’s own instructions. If the course opens in a separate window, run it in that window.</p><details open><summary>Helper code</summary><p>Manual copy: click inside the box, press <b>Ctrl+A</b>, then <b>Ctrl+C</b>. This works even when the copy button is blocked.</p><textarea id="code" readonly aria-label="Full helper code">(() =&gt; {
+  &#x27;use strict&#x27;;
+
+  if (typeof window.__chPCStop === &#x27;function&#x27;) {
+    window.__chPCStop();
+  }
+
+  const state = {
+    auto: false,
+    speed: 3,
+    wpm: 600,
+    timer: null,
+    tick: null,
+    keyboard: false,
+    lastExpandedHeight: 540,
+    pendingNarration: false,
+    epoch: 0,
+    delays: new Set(),
+    lastSlide: &#x27;&#x27;,
+    busy: false,
+    scormState: &#x27;Unknown&#x27;
+  };
+
+  const panel = document.createElement(&#x27;section&#x27;);
+  panel.id = &#x27;course-helper-pc&#x27;;
+
+  panel.style.cssText = `
+    all: initial;
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 390px;
+    height: 540px;
+    min-width: 260px;
+    min-height: 48px;
+    max-width: 95vw;
+    max-height: 90vh;
+    z-index: 2147483647;
+    background: #17191e;
+    color: #fff;
+    border: 1px solid #7e8999;
+    border-radius: 10px;
+    resize: both;
+    overflow: hidden;
+    box-shadow: 0 8px 30px #0009;
+    font: 14px Arial, sans-serif;
+  `;
+
+  panel.innerHTML = `
+    &lt;div id=&quot;ch-head&quot; style=&quot;display:flex;justify-content:space-between;align-items:center;background:#2a3341;padding:12px;cursor:move;user-select:none&quot;&gt;
+      &lt;b&gt;Course Helper PC&lt;/b&gt;
+      &lt;span&gt;
+        &lt;button id=&quot;ch-min&quot;&gt;−&lt;/button&gt;
+        &lt;button id=&quot;ch-close&quot;&gt;×&lt;/button&gt;
+      &lt;/span&gt;
+    &lt;/div&gt;
+
+    &lt;div id=&quot;ch-body&quot; style=&quot;height:calc(100% - 48px);overflow:auto;padding:12px;box-sizing:border-box&quot;&gt;
+      &lt;div id=&quot;ch-alert&quot; role=&quot;status&quot; style=&quot;padding:10px;background:#394258;margin-bottom:10px;border-radius:6px&quot;&gt;
+        Checking current lesson…
+      &lt;/div&gt;
+
+      &lt;div style=&quot;display:flex;gap:7px;flex-wrap:wrap&quot;&gt;
+        &lt;button id=&quot;ch-prev&quot;&gt;◀ Back&lt;/button&gt;
+        &lt;button id=&quot;ch-paragraph&quot;&gt;Finish paragraph&lt;/button&gt;
+        &lt;button id=&quot;ch-next&quot;&gt;Next ▶&lt;/button&gt;
+      &lt;/div&gt;
+
+      &lt;button id=&quot;ch-auto&quot; style=&quot;width:100%;margin-top:10px;padding:10px;font-weight:bold&quot;&gt;
+        Start auto
+      &lt;/button&gt;
+
+      &lt;p&gt;
+        &lt;label&gt;
+          Reading rate &lt;output id=&quot;ch-rate-label&quot;&gt;600&lt;/output&gt; wpm
+          &lt;input id=&quot;ch-rate&quot; type=&quot;range&quot; min=&quot;200&quot; max=&quot;1200&quot; step=&quot;100&quot; value=&quot;600&quot; style=&quot;width:100%&quot;&gt;
+        &lt;/label&gt;
+      &lt;/p&gt;
+
+      &lt;p&gt;
+        Media speed
+        &lt;select id=&quot;ch-speed&quot;&gt;
+          &lt;option&gt;1&lt;/option&gt;
+          &lt;option&gt;1.5&lt;/option&gt;
+          &lt;option&gt;2&lt;/option&gt;
+          &lt;option selected&gt;3&lt;/option&gt;
+          &lt;option&gt;4&lt;/option&gt;
+        &lt;/select&gt; ×
+      &lt;/p&gt;
+
+      &lt;label&gt;
+        &lt;input id=&quot;ch-keys&quot; type=&quot;checkbox&quot;&gt;
+        Keyboard: Alt+→ next, Alt+← back, Alt+↓ finish
+      &lt;/label&gt;
+
+      &lt;details open&gt;
+        &lt;summary&gt;Visible slide text&lt;/summary&gt;
+        &lt;div id=&quot;ch-text&quot; style=&quot;margin-top:8px;white-space:pre-wrap;line-height:1.5;max-height:220px;overflow:auto&quot;&gt;&lt;/div&gt;
+        &lt;button id=&quot;ch-refresh&quot;&gt;Refresh text&lt;/button&gt;
+      &lt;/details&gt;
+
+      &lt;details&gt;
+        &lt;summary&gt;Quiz help (visible questions)&lt;/summary&gt;
+        &lt;p&gt;Quizzes are detected when visible. Auto pauses for questions. Review answers and submit yourself.&lt;/p&gt;
+        &lt;button id=&quot;ch-copy&quot;&gt;Copy visible question text&lt;/button&gt;
+        &lt;button id=&quot;ch-suggest&quot;&gt;Find lesson clues&lt;/button&gt;
+        &lt;button id=&quot;ch-preview&quot;&gt;Upcoming quizzes&lt;/button&gt;
+        &lt;div id=&quot;ch-preview-result&quot; role=&quot;status&quot; style=&quot;white-space:pre-wrap;font-size:12px;margin-top:8px&quot;&gt;&lt;/div&gt;
+        &lt;div id=&quot;ch-clues&quot; style=&quot;white-space:pre-wrap;font-size:12px;line-height:1.45;margin-top:8px&quot;&gt;&lt;/div&gt;
+      &lt;/details&gt;
+
+      &lt;details&gt;&lt;summary&gt;Completion and diagnostics&lt;/summary&gt;
+        &lt;button id=&quot;ch-check&quot;&gt;Check completion&lt;/button&gt;
+        &lt;button id=&quot;ch-diagnose&quot;&gt;Diagnostics&lt;/button&gt;
+        &lt;div id=&quot;ch-diagnostic-result&quot; role=&quot;status&quot; style=&quot;white-space:pre-wrap;font-size:12px;margin-top:8px&quot;&gt;&lt;/div&gt;
+      &lt;/details&gt;
+      &lt;p id=&quot;ch-status&quot; role=&quot;status&quot; style=&quot;font-size:12px;color:#c7d5e5&quot;&gt;
+        Ready. Resize by dragging the bottom-right corner.
+      &lt;/p&gt;
+    &lt;/div&gt;
+  `;
+
+
+  // Scoped styles: preserve host page appearance and provide visible focus states.
+  const theme = document.createElement(&#x27;style&#x27;);
+  theme.id = &#x27;course-helper-pc-theme&#x27;;
+  theme.textContent = `
+    #course-helper-pc { color-scheme: dark; font-family: Inter, system-ui, -apple-system, &quot;Segoe UI&quot;, sans-serif !important; line-height: 1.5; border-radius: 16px !important; border: 1px solid #66758a !important; box-shadow: 0 18px 48px rgba(0,0,0,.48) !important; }
+    #course-helper-pc, #course-helper-pc * { box-sizing: border-box; }
+    #course-helper-pc button, #course-helper-pc select { font: inherit; background: #2b384b; color: #fff; border: 1px solid #62758c; border-radius: 9px; padding: 9px 12px; min-height: 40px; cursor: pointer; transition: background .15s ease, border-color .15s ease; }
+    #course-helper-pc button:hover { background: #3b4d64; }
+    #course-helper-pc button:active { background: #475e79; }
+    #course-helper-pc :is(button,select,input,summary):focus-visible { outline: 3px solid #7bd4fa; outline-offset: 3px; }
+    #course-helper-pc #ch-head { background: #202d41 !important; border-bottom: 1px solid #46586d; height: 48px; }
+    #course-helper-pc #ch-auto { background: #1b6a63; border-color: #65c7ba; }
+    #course-helper-pc #ch-auto:hover { background: #247e75; }
+    #course-helper-pc #ch-paragraph { background: #34577e; border-color: #8ab4e2; }
+    #course-helper-pc #ch-alert { font-weight: 650; letter-spacing: .01em; }
+    #course-helper-pc details { background: #202a39; border: 1px solid #465467; border-radius: 10px; padding: 12px; margin: 12px 0; }
+    #course-helper-pc summary { cursor: pointer; padding: 4px 0; font-weight: 650; }
+    #course-helper-pc input[type=&quot;range&quot;] { accent-color: #7bd4fa; min-height: 28px; }
+    #course-helper-pc input[type=&quot;checkbox&quot;] { accent-color: #7bd4fa; width: 17px; height: 17px; vertical-align: middle; }
+    #course-helper-pc #ch-status { padding: 10px; border-radius: 9px; background: #263449; color: #f0f6ff !important; font-size: 13px !important; }
+    #course-helper-pc #ch-text { font-size: 14px; line-height: 1.65 !important; }
+    #course-helper-pc #ch-head button { min-width: 38px; min-height: 32px; padding: 3px 9px; }
+    @media (prefers-reduced-motion: reduce) { #course-helper-pc button { transition: none; } }
+  `;
+  document.head.appendChild(theme);
+  panel.setAttribute(&#x27;aria-label&#x27;, &#x27;Course Helper&#x27;);
+  panel.setAttribute(&#x27;role&#x27;, &#x27;region&#x27;);
+  panel.querySelector(&#x27;#ch-min&#x27;).setAttribute(&#x27;aria-label&#x27;, &#x27;Minimize or restore Course Helper&#x27;);
+  panel.querySelector(&#x27;#ch-close&#x27;).setAttribute(&#x27;aria-label&#x27;, &#x27;Close Course Helper&#x27;);
+  panel.querySelector(&#x27;#ch-rate&#x27;).setAttribute(&#x27;aria-label&#x27;, &#x27;Reading speed in words per minute&#x27;);
+  panel.querySelector(&#x27;#ch-speed&#x27;).setAttribute(&#x27;aria-label&#x27;, &#x27;Media playback speed&#x27;);
+  panel.querySelector(&#x27;#ch-alert&#x27;).setAttribute(&#x27;aria-live&#x27;, &#x27;polite&#x27;);
+  panel.querySelector(&#x27;#ch-status&#x27;).setAttribute(&#x27;aria-live&#x27;, &#x27;polite&#x27;);
+  // Distinct navigation controls are easier to identify at a glance.
+  panel.querySelector(&#x27;#ch-next&#x27;).title = &#x27;Advance to the next slide when available&#x27;;
+  panel.querySelector(&#x27;#ch-paragraph&#x27;).title = &#x27;Finish the current accessible narration&#x27;;
+
+  document.body.append(panel);
+
+  const $ = id =&gt; panel.querySelector(&#x27;#&#x27; + id);
+
+  const later = (fn, ms) =&gt; { const id = setTimeout(() =&gt; { state.delays.delete(id); if (panel.isConnected) fn(); }, ms); state.delays.add(id); return id; };
+
+  const docs = () =&gt; {
+    const out = [];
+    const visit = doc =&gt; {
+      if (!doc || out.includes(doc)) return;
+      out.push(doc);
+      for (const frame of doc.querySelectorAll(&#x27;iframe,frame&#x27;)) {
+        try { visit(frame.contentDocument); } catch {}
+      }
+    };
+    visit(document);
+    return out;
+  };
+
+  const visible = el =&gt; {
+    if (panel.contains(el) || !el.getClientRects().length) return false;
+    const view = el.ownerDocument.defaultView;
+    if (!view || view.getComputedStyle(el).visibility === &#x27;hidden&#x27;) return false;
+    try {
+      const frame = view.frameElement;
+      if (frame &amp;&amp; !visible(frame)) return false;
+    } catch {}
+    return true;
+  };
+
+  const label = el =&gt;
+    (
+      el.getAttribute(&#x27;aria-label&#x27;) ||
+      el.innerText ||
+      el.textContent ||
+      el.value ||
+      &#x27;&#x27;
+    ).trim().toLowerCase();
+
+  function assessment() {
+    for (const doc of docs()) {
+      const quizText = [...doc.querySelectorAll(&#x27;main, article, [role=main], .slide, .question, .quiz&#x27;)]
+        .filter(el =&gt; visible(el) &amp;&amp; !panel.contains(el))
+        .map(el =&gt; el.innerText || &#x27;&#x27;).join(&#x27; &#x27;).slice(0,18000).toLowerCase();
+
+      const answerInputs = [...doc.querySelectorAll(&#x27;input[type=radio],input[type=checkbox],[role=radio],[role=checkbox]&#x27;)].some(visible);
+      const actionButtons = [...doc.querySelectorAll(&#x27;button,[role=button],input[type=submit]&#x27;)]
+        .filter(visible).some(el =&gt; /^(submit|check answer|try again|show answer|submit answer)/i.test(label(el)));
+      const questionPhrases = /(select the correct|which of the following|choose the correct|true or false|submit answer|check answer)/.test(quizText);
+      // Labels and course-menu mentions alone do not block progress.
+      if (answerInputs || actionButtons || questionPhrases) return true;
+    }
+
+    return false;
+  }
+
+  function readCompletion() {
+    // Read-only status; do not manipulate SCORM progress.
+    const lines = [];
+    const seen = new Set();
+    let current = window;
+    for (let depth = 0; depth &lt; 6 &amp;&amp; current; depth++) {
+      try {
+        for (const key of [&#x27;API_1484_11&#x27;, &#x27;API&#x27;]) {
+          const api = current[key];
+          if (!api || seen.has(api)) continue;
+          seen.add(api);
+          try {
+            if (key === &#x27;API_1484_11&#x27; &amp;&amp; typeof api.GetValue === &#x27;function&#x27;) {
+              lines.push(&#x27;SCORM 2004 completion: &#x27; + (api.GetValue(&#x27;cmi.completion_status&#x27;) || &#x27;unknown&#x27;));
+              lines.push(&#x27;SCORM 2004 success: &#x27; + (api.GetValue(&#x27;cmi.success_status&#x27;) || &#x27;unknown&#x27;));
+            } else if (key === &#x27;API&#x27; &amp;&amp; typeof api.LMSGetValue === &#x27;function&#x27;) {
+              lines.push(&#x27;SCORM 1.2 lesson status: &#x27; + (api.LMSGetValue(&#x27;cmi.core.lesson_status&#x27;) || &#x27;unknown&#x27;));
+            }
+          } catch { lines.push(&#x27;SCORM API located but status was inaccessible&#x27;); }
+        }
+        if (current.parent === current) break;
+        current = current.parent;
+      } catch { break; }
+    }
+    const visibleStatus = docs().flatMap(d =&gt; [...d.querySelectorAll(&#x27;[role=status],.completion-status,.course-status&#x27;)])
+      .filter(visible).map(el =&gt; (el.innerText || &#x27;&#x27;).trim()).filter(Boolean).slice(0,5);
+    if (visibleStatus.length) lines.push(&#x27;Visible status: &#x27; + visibleStatus.join(&#x27; | &#x27;).slice(0,350));
+    if (!lines.length) lines.push(&#x27;No accessible completion status. Verify in the learner dashboard.&#x27;);
+    return lines.join(&#x27;\n&#x27;);
+  }
+
+  function upcomingQuiz() {
+    const results = [];
+    for (const doc of docs()) {
+      for (const el of doc.querySelectorAll(&#x27;nav a,aside a,[role=navigation] a,.toc li,.menu li&#x27;)) {
+        if (!visible(el)) continue;
+        const t = (el.innerText || &#x27;&#x27;).trim();
+        if (t.length &lt; 160 &amp;&amp; /(quiz|knowledge check|assessment|test)/i.test(t)) results.push(t);
+      }
+    }
+    return [...new Set(results)].slice(0,6);
+  }
+
+  function diagnose() {
+    return [
+      &#x27;Helper: loaded&#x27;,
+      &#x27;Accessible documents: &#x27; + docs().length,
+      &#x27;Media found: &#x27; + media().length,
+      &#x27;Words shown: &#x27; + refresh(),
+      &#x27;Quiz or interaction: &#x27; + (assessment() ? &#x27;possibly detected&#x27; : &#x27;not detected&#x27;),
+      &#x27;Slide signature: &#x27; + (slideSignature() ? &#x27;available&#x27; : &#x27;not available&#x27;),
+      readCompletion()
+    ].join(&#x27;\n&#x27;);
+  }
+
+  function status(message) {
+    $(&#x27;ch-status&#x27;).textContent = message;
+  }
+
+  function refresh() {
+    const chunks = [];
+
+    for (const doc of docs()) {
+      for (const el of doc.querySelectorAll(&#x27;main p,article p,[role=main] p,.slide p,h1,h2,h3&#x27;)) {
+        if (visible(el) &amp;&amp; !panel.contains(el)) {
+          let t = (el.innerText || &#x27;&#x27;).trim();
+
+          if (
+            t.length &gt; 15 &amp;&amp;
+            t.length &lt; 2500 &amp;&amp;
+            !chunks.includes(t)
+          ) {
+            chunks.push(t);
+          }
+        }
+      }
+    }
+
+    $(&#x27;ch-text&#x27;).textContent =
+      chunks.slice(0, 30).join(&#x27;\n\n&#x27;) ||
+      &#x27;No readable text detected in this slide.&#x27;;
+
+    return chunks.join(&#x27; &#x27;).split(/\s+/).filter(Boolean).length;
+  }
+
+  function slideSignature() {
+    return docs().map(doc =&gt; [...doc.querySelectorAll(&#x27;main,article,[role=main],.slide&#x27;)]
+      .filter(visible).map(el =&gt; (el.innerText || &#x27;&#x27;).trim().slice(0,800)).join(&#x27;|&#x27;)).join(&#x27;||&#x27;);
+  }
+
+  function media() {
+    return docs()
+      .flatMap(d =&gt; [...d.querySelectorAll(&#x27;audio,video&#x27;)])
+      .filter(m =&gt; !panel.contains(m));
+  }
+
+  function speed() {
+    for (const m of media()) {
+      try {
+        m.playbackRate = state.speed;
+      } catch {}
+    }
+  }
+
+  function finish() {
+    if (assessment()) {
+      stop(&#x27;Quiz or interaction detected. Complete it manually.&#x27;);
+      return false;
+    }
+
+    let count = 0;
+
+    for (const m of media()) {
+      try {
+        if (
+          Number.isFinite(m.duration) &amp;&amp;
+          m.duration &gt; 0
+        ) {
+          m.currentTime = Math.max(0, m.duration - .05);
+          count++;
+        }
+      } catch {}
+    }
+
+    if (count) state.pendingNarration = true;
+    status(
+      count
+        ? `Finished ${count} media segment(s).`
+        : &#x27;No accessible media timeline. Use the platform controls.&#x27;
+    );
+
+    later(refresh, 450);
+    return count &gt; 0;
+  }
+
+  function nav(dir) {
+    if (assessment()) {
+      stop(&#x27;Question or interaction detected. Complete it manually.&#x27;);
+      return false;
+    }
+    const terms = dir === &#x27;next&#x27; ? [&#x27;next&#x27;,&#x27;continue&#x27;,&#x27;next slide&#x27;] : [&#x27;back&#x27;,&#x27;previous&#x27;,&#x27;previous slide&#x27;];
+    const candidates = [];
+    for (const doc of docs()) {
+      for (const el of doc.querySelectorAll(&#x27;button,a,[role=&quot;button&quot;],input[type=&quot;button&quot;]&#x27;)) {
+        if (!visible(el) || el.disabled || el.getAttribute(&#x27;aria-disabled&#x27;) === &#x27;true&#x27;) continue;
+        const name = label(el);
+        if (!terms.some(t =&gt; name === t || name.startsWith(t + &#x27; &#x27;))) continue;
+        const context = el.closest(&#x27;main,article,[role=main],.slide,.content,.player&#x27;);
+        candidates.push({el, score: (context ? 10 : 0) + (name === terms[0] ? 2 : 0)});
+      }
+    }
+    candidates.sort((a,b)=&gt;b.score-a.score);
+    if (!candidates.length) {
+      status(&#x27;No available &#x27; + dir + &#x27; control. Use course navigation.&#x27;);
+      return false;
+    }
+    if (candidates.length &gt; 1 &amp;&amp; candidates[0].score === candidates[1].score) {
+      status(&#x27;Several navigation buttons found. Use the course Next/Back control to avoid the wrong action.&#x27;);
+      return false;
+    }
+    const before = slideSignature();
+    candidates[0].el.click();
+    state.pendingNarration = false;
+    later(() =&gt; {
+      refresh();
+      if (slideSignature() === before) {
+        status(&#x27;Navigation attempted but slide change not confirmed. Check course page.&#x27;);
+        if (state.auto) stop(&#x27;Auto stopped: slide change not confirmed.&#x27;);
+      } else {
+        status(&#x27;Slide content changed. Check LMS progress separately.&#x27;);
+      }
+    }, 900);
+    return true;
+  }
+
+  function stop(reason) {
+    state.auto = false;
+    clearTimeout(state.timer);
+    state.epoch++;
+
+    $(&#x27;ch-auto&#x27;).textContent = &#x27;Start auto&#x27;;
+
+    if (reason) {
+      status(reason);
+    }
+  }
+
+  function cycle() {
+    if (!state.auto) return;
+    const epoch = state.epoch;
+    let signature = slideSignature();
+    let started = Date.now();
+    let observedMedia = new Set();
+
+    const check = () =&gt; {
+      if (!state.auto || epoch !== state.epoch) return;
+      if (assessment()) {
+        stop(&#x27;Quiz or interaction detected. Complete it manually.&#x27;);
+        return;
+      }
+      const current = slideSignature();
+      if (current !== signature) {
+        signature = current;
+        started = Date.now();
+        observedMedia.clear();
+      }
+      const words = refresh();
+      // Visible video and playing/previously played audio belong to the active
+      // slide. Do not wait for hidden, untouched media from other slides.
+      const tracks = media().filter(m =&gt;
+        visible(m) || (!m.paused &amp;&amp; !m.ended) ||
+        (m.currentTime &gt; 0 &amp;&amp; !m.ended) || observedMedia.has(m)
+      );
+      tracks.forEach(m =&gt; observedMedia.add(m));
+      const readingMs = Math.max(3000, Math.ceil(words / state.wpm * 60000));
+      const elapsed = Date.now() - started;
+      if (tracks.length) {
+        if (!tracks.every(m =&gt; m.ended)) {
+          status(&#x27;Auto: waiting for slide media to finish. Play it if paused.&#x27;);
+          state.timer = setTimeout(check, 500);
+          return;
+        }
+        // Give the course time to enable Next after its media-ended handler.
+        if (elapsed &lt; 1000) {
+          state.timer = setTimeout(check, 500);
+          return;
+        }
+      } else if (!words) {
+        if (elapsed &gt;= 15000) {
+          stop(&#x27;No accessible slide text or media. Use the course controls.&#x27;);
+          return;
+        }
+        status(&#x27;Auto: waiting for slide content to load…&#x27;);
+        state.timer = setTimeout(check, 500);
+        return;
+      } else if (elapsed &lt; readingMs) {
+        status(&#x27;Auto: reading slide; &#x27; + Math.ceil((readingMs - elapsed) / 1000) + &#x27;s remaining.&#x27;);
+        state.timer = setTimeout(check, 500);
+        return;
+      }
+      if (nav(&#x27;next&#x27;)) {
+        state.timer = setTimeout(cycle, 1200);
+      } else {
+        stop(&#x27;Next unavailable. Complete any slide interaction or check course completion.&#x27;);
+      }
+    };
+    check();
+  }
+
+  $(&#x27;ch-prev&#x27;).onclick = () =&gt; {
+    stop();
+    state.pendingNarration = false;
+    nav(&#x27;previous&#x27;);
+  };
+
+  $(&#x27;ch-paragraph&#x27;).onclick = () =&gt; {
+    stop();
+    finish();
+  };
+
+  $(&#x27;ch-next&#x27;).onclick = () =&gt; {
+    stop();
+    if (assessment()) return status(&#x27;Quiz or interaction detected. Complete it manually.&#x27;);
+    if (state.pendingNarration) {
+      state.pendingNarration = false;
+      nav(&#x27;next&#x27;);
+    } else if (!finish()) nav(&#x27;next&#x27;);
+  };
+
+  $(&#x27;ch-auto&#x27;).onclick = () =&gt; {
+    if (state.auto) {
+      stop(&#x27;Paused&#x27;);
+      return;
+    }
+
+    state.auto = true;
+    $(&#x27;ch-auto&#x27;).textContent = &#x27;Pause auto&#x27;;
+    cycle();
+  };
+
+  $(&#x27;ch-refresh&#x27;).onclick = refresh;
+
+  $(&#x27;ch-rate&#x27;).oninput = e =&gt; {
+    state.wpm = +e.target.value;
+    $(&#x27;ch-rate-label&#x27;).textContent = state.wpm;
+  };
+
+  $(&#x27;ch-speed&#x27;).onchange = e =&gt; {
+    state.speed = +e.target.value;
+    speed();
+  };
+
+  $(&#x27;ch-keys&#x27;).onchange = e =&gt; {
+    state.keyboard = e.target.checked;
+  };
+
+  $(&#x27;ch-preview&#x27;).onclick = () =&gt; {
+    const hits = upcomingQuiz();
+    $(&#x27;ch-preview-result&#x27;).textContent = hits.length
+      ? &#x27;Possible quizzes in visible navigation:\n• &#x27; + hits.join(&#x27;\n• &#x27;)
+      : &#x27;No upcoming quiz visible in accessible course navigation; not a guarantee.&#x27;;
+  };
+  $(&#x27;ch-check&#x27;).onclick = () =&gt; { $(&#x27;ch-diagnostic-result&#x27;).textContent = readCompletion(); };
+  $(&#x27;ch-diagnose&#x27;).onclick = () =&gt; { $(&#x27;ch-diagnostic-result&#x27;).textContent = diagnose(); };
+
+  $(&#x27;ch-suggest&#x27;).onclick = () =&gt; {
+    const text = docs().map(d =&gt; d.body?.innerText || &#x27;&#x27;).join(&#x27;\n&#x27;);
+    const lines = text.split(&#x27;\n&#x27;).map(x=&gt;x.trim()).filter(x=&gt;x.length&gt;20 &amp;&amp; x.length&lt;500);
+    const hints = lines.filter(x =&gt; /(because|therefore|means|defined|refers to|is the|are the|important|remember|correct)/i.test(x)).slice(0,12);
+    $(&#x27;ch-clues&#x27;).textContent = hints.length ? &#x27;Possible lesson clues (not verified answers):\n• &#x27; + hints.join(&#x27;\n• &#x27;) : &#x27;No answer clues found in visible lesson text. Use Copy visible question text to research the answer.&#x27;;
+  };
+
+  $(&#x27;ch-copy&#x27;).onclick = async () =&gt; {
+    let text = docs().flatMap(d =&gt; [...d.querySelectorAll(&#x27;main,article,[role=main],.slide,.question&#x27;)].filter(visible).map(e =&gt; e.innerText || &#x27;&#x27;)).join(&#x27;\n&#x27;).slice(0,15000);
+
+    try {
+      await navigator.clipboard.writeText(text);
+      status(
+        &#x27;Visible text copied. Clipboard may persist after closing.&#x27;
+      );
+    } catch {
+      status(&#x27;Clipboard access blocked.&#x27;);
+    }
+  };
+
+  let minimized = false;
+
+  $(&#x27;ch-min&#x27;).onclick = () =&gt; {
+    if (!minimized) {
+      state.lastExpandedHeight = panel.getBoundingClientRect().height;
+    }
+    minimized = !minimized;
+    $(&#x27;ch-body&#x27;).style.display = minimized ? &#x27;none&#x27; : &#x27;block&#x27;;
+    panel.style.resize = minimized ? &#x27;none&#x27; : &#x27;both&#x27;;
+    panel.style.height = minimized
+      ? &#x27;48px&#x27;
+      : Math.min(state.lastExpandedHeight, innerHeight * 0.9) + &#x27;px&#x27;;
+    $(&#x27;ch-min&#x27;).textContent = minimized ? &#x27;□&#x27; : &#x27;−&#x27;;
+    $(&#x27;ch-min&#x27;).title = minimized ? &#x27;Restore panel&#x27; : &#x27;Minimize panel&#x27;;
+  };
+
+  let drag = null;
+  const head = $(&#x27;ch-head&#x27;);
+
+  head.addEventListener(&#x27;pointerdown&#x27;, e =&gt; {
+    if (e.target.closest(&#x27;button&#x27;)) return;
+
+    const rect = panel.getBoundingClientRect();
+
+    drag = {
+      dx: e.clientX - rect.left,
+      dy: e.clientY - rect.top,
+      id: e.pointerId
+    };
+
+    head.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  head.addEventListener(&#x27;pointermove&#x27;, e =&gt; {
+    if (!drag || drag.id !== e.pointerId) return;
+
+    panel.style.right = &#x27;auto&#x27;;
+
+    panel.style.left =
+      Math.max(
+        0,
+        Math.min(
+          innerWidth - panel.offsetWidth,
+          e.clientX - drag.dx
+        )
+      ) + &#x27;px&#x27;;
+
+    panel.style.top =
+      Math.max(
+        0,
+        Math.min(
+          innerHeight - panel.offsetHeight,
+          e.clientY - drag.dy
+        )
+      ) + &#x27;px&#x27;;
+  });
+
+  head.addEventListener(&#x27;pointerup&#x27;, () =&gt; drag = null);
+  head.addEventListener(&#x27;pointercancel&#x27;, () =&gt; drag = null);
+
+  function keys(e) {
+    if (
+      !state.keyboard ||
+      !e.altKey ||
+      e.ctrlKey ||
+      e.metaKey ||
+      e.repeat ||
+      e.target.closest?.(
+        &#x27;input,textarea,select,[contenteditable]&#x27;
+      )
+    ) {
+      return;
+    }
+
+    if (e.key === &#x27;ArrowRight&#x27;) {
+      e.preventDefault();
+      stop();
+      $(&#x27;ch-next&#x27;).click();
+    } else if (e.key === &#x27;ArrowLeft&#x27;) {
+      e.preventDefault();
+      stop();
+      nav(&#x27;previous&#x27;);
+    } else if (e.key === &#x27;ArrowDown&#x27;) {
+      e.preventDefault();
+      stop();
+      finish();
+    }
+  }
+
+  document.addEventListener(&#x27;keydown&#x27;, keys, true);
+
+  state.tick = setInterval(() =&gt; {
+    $(&#x27;ch-alert&#x27;).textContent = assessment()
+      ? &#x27;QUIZ / INTERACTION DETECTED. Auto will pause.&#x27;
+      : &#x27;CONTENT SLIDE. Quiz not currently detected.&#x27;;
+
+    speed();
+  }, 1000);
+
+  function cleanup() {
+    stop();
+    state.pendingNarration = false;
+    clearInterval(state.tick);
+    for (const id of state.delays) clearTimeout(id);
+    state.delays.clear();
+    document.removeEventListener(&#x27;keydown&#x27;, keys, true);
+    panel.remove();
+    document.getElementById(&#x27;course-helper-pc-theme&#x27;)?.remove();
+    delete window.__chPCStop;
+  }
+
+  $(&#x27;ch-close&#x27;).onclick = cleanup;
+  window.__chPCStop = cleanup;
+
+  refresh();
+  speed();
+
+  status(&#x27;Ready. Direct install active. Open Diagnostics if lesson content is missing.&#x27;);
+})();
+</textarea></details><script type="application/json" id="payload">"(() => {\n  'use strict';\n\n  if (typeof window.__chPCStop === 'function') {\n    window.__chPCStop();\n  }\n\n  const state = {\n    auto: false,\n    speed: 3,\n    wpm: 600,\n    timer: null,\n    tick: null,\n    keyboard: false,\n    lastExpandedHeight: 540,\n    pendingNarration: false,\n    epoch: 0,\n    delays: new Set(),\n    lastSlide: '',\n    busy: false,\n    scormState: 'Unknown'\n  };\n\n  const panel = document.createElement('section');\n  panel.id = 'course-helper-pc';\n\n  panel.style.cssText = `\n    all: initial;\n    position: fixed;\n    top: 20px;\n    right: 20px;\n    width: 390px;\n    height: 540px;\n    min-width: 260px;\n    min-height: 48px;\n    max-width: 95vw;\n    max-height: 90vh;\n    z-index: 2147483647;\n    background: #17191e;\n    color: #fff;\n    border: 1px solid #7e8999;\n    border-radius: 10px;\n    resize: both;\n    overflow: hidden;\n    box-shadow: 0 8px 30px #0009;\n    font: 14px Arial, sans-serif;\n  `;\n\n  panel.innerHTML = `\n    \u003cdiv id=\"ch-head\" style=\"display:flex;justify-content:space-between;align-items:center;background:#2a3341;padding:12px;cursor:move;user-select:none\">\n      \u003cb>Course Helper PC\u003c/b>\n      \u003cspan>\n        \u003cbutton id=\"ch-min\">\u2212\u003c/button>\n        \u003cbutton id=\"ch-close\">\u00d7\u003c/button>\n      \u003c/span>\n    \u003c/div>\n\n    \u003cdiv id=\"ch-body\" style=\"height:calc(100% - 48px);overflow:auto;padding:12px;box-sizing:border-box\">\n      \u003cdiv id=\"ch-alert\" role=\"status\" style=\"padding:10px;background:#394258;margin-bottom:10px;border-radius:6px\">\n        Checking current lesson\u2026\n      \u003c/div>\n\n      \u003cdiv style=\"display:flex;gap:7px;flex-wrap:wrap\">\n        \u003cbutton id=\"ch-prev\">\u25c0 Back\u003c/button>\n        \u003cbutton id=\"ch-paragraph\">Finish paragraph\u003c/button>\n        \u003cbutton id=\"ch-next\">Next \u25b6\u003c/button>\n      \u003c/div>\n\n      \u003cbutton id=\"ch-auto\" style=\"width:100%;margin-top:10px;padding:10px;font-weight:bold\">\n        Start auto\n      \u003c/button>\n\n      \u003cp>\n        \u003clabel>\n          Reading rate \u003coutput id=\"ch-rate-label\">600\u003c/output> wpm\n          \u003cinput id=\"ch-rate\" type=\"range\" min=\"200\" max=\"1200\" step=\"100\" value=\"600\" style=\"width:100%\">\n        \u003c/label>\n      \u003c/p>\n\n      \u003cp>\n        Media speed\n        \u003cselect id=\"ch-speed\">\n          \u003coption>1\u003c/option>\n          \u003coption>1.5\u003c/option>\n          \u003coption>2\u003c/option>\n          \u003coption selected>3\u003c/option>\n          \u003coption>4\u003c/option>\n        \u003c/select> \u00d7\n      \u003c/p>\n\n      \u003clabel>\n        \u003cinput id=\"ch-keys\" type=\"checkbox\">\n        Keyboard: Alt+\u2192 next, Alt+\u2190 back, Alt+\u2193 finish\n      \u003c/label>\n\n      \u003cdetails open>\n        \u003csummary>Visible slide text\u003c/summary>\n        \u003cdiv id=\"ch-text\" style=\"margin-top:8px;white-space:pre-wrap;line-height:1.5;max-height:220px;overflow:auto\">\u003c/div>\n        \u003cbutton id=\"ch-refresh\">Refresh text\u003c/button>\n      \u003c/details>\n\n      \u003cdetails>\n        \u003csummary>Quiz help (visible questions)\u003c/summary>\n        \u003cp>Quizzes are detected when visible. Auto pauses for questions. Review answers and submit yourself.\u003c/p>\n        \u003cbutton id=\"ch-copy\">Copy visible question text\u003c/button>\n        \u003cbutton id=\"ch-suggest\">Find lesson clues\u003c/button>\n        \u003cbutton id=\"ch-preview\">Upcoming quizzes\u003c/button>\n        \u003cdiv id=\"ch-preview-result\" role=\"status\" style=\"white-space:pre-wrap;font-size:12px;margin-top:8px\">\u003c/div>\n        \u003cdiv id=\"ch-clues\" style=\"white-space:pre-wrap;font-size:12px;line-height:1.45;margin-top:8px\">\u003c/div>\n      \u003c/details>\n\n      \u003cdetails>\u003csummary>Completion and diagnostics\u003c/summary>\n        \u003cbutton id=\"ch-check\">Check completion\u003c/button>\n        \u003cbutton id=\"ch-diagnose\">Diagnostics\u003c/button>\n        \u003cdiv id=\"ch-diagnostic-result\" role=\"status\" style=\"white-space:pre-wrap;font-size:12px;margin-top:8px\">\u003c/div>\n      \u003c/details>\n      \u003cp id=\"ch-status\" role=\"status\" style=\"font-size:12px;color:#c7d5e5\">\n        Ready. Resize by dragging the bottom-right corner.\n      \u003c/p>\n    \u003c/div>\n  `;\n\n\n  // Scoped styles: preserve host page appearance and provide visible focus states.\n  const theme = document.createElement('style');\n  theme.id = 'course-helper-pc-theme';\n  theme.textContent = `\n    #course-helper-pc { color-scheme: dark; font-family: Inter, system-ui, -apple-system, \"Segoe UI\", sans-serif !important; line-height: 1.5; border-radius: 16px !important; border: 1px solid #66758a !important; box-shadow: 0 18px 48px rgba(0,0,0,.48) !important; }\n    #course-helper-pc, #course-helper-pc * { box-sizing: border-box; }\n    #course-helper-pc button, #course-helper-pc select { font: inherit; background: #2b384b; color: #fff; border: 1px solid #62758c; border-radius: 9px; padding: 9px 12px; min-height: 40px; cursor: pointer; transition: background .15s ease, border-color .15s ease; }\n    #course-helper-pc button:hover { background: #3b4d64; }\n    #course-helper-pc button:active { background: #475e79; }\n    #course-helper-pc :is(button,select,input,summary):focus-visible { outline: 3px solid #7bd4fa; outline-offset: 3px; }\n    #course-helper-pc #ch-head { background: #202d41 !important; border-bottom: 1px solid #46586d; height: 48px; }\n    #course-helper-pc #ch-auto { background: #1b6a63; border-color: #65c7ba; }\n    #course-helper-pc #ch-auto:hover { background: #247e75; }\n    #course-helper-pc #ch-paragraph { background: #34577e; border-color: #8ab4e2; }\n    #course-helper-pc #ch-alert { font-weight: 650; letter-spacing: .01em; }\n    #course-helper-pc details { background: #202a39; border: 1px solid #465467; border-radius: 10px; padding: 12px; margin: 12px 0; }\n    #course-helper-pc summary { cursor: pointer; padding: 4px 0; font-weight: 650; }\n    #course-helper-pc input[type=\"range\"] { accent-color: #7bd4fa; min-height: 28px; }\n    #course-helper-pc input[type=\"checkbox\"] { accent-color: #7bd4fa; width: 17px; height: 17px; vertical-align: middle; }\n    #course-helper-pc #ch-status { padding: 10px; border-radius: 9px; background: #263449; color: #f0f6ff !important; font-size: 13px !important; }\n    #course-helper-pc #ch-text { font-size: 14px; line-height: 1.65 !important; }\n    #course-helper-pc #ch-head button { min-width: 38px; min-height: 32px; padding: 3px 9px; }\n    @media (prefers-reduced-motion: reduce) { #course-helper-pc button { transition: none; } }\n  `;\n  document.head.appendChild(theme);\n  panel.setAttribute('aria-label', 'Course Helper');\n  panel.setAttribute('role', 'region');\n  panel.querySelector('#ch-min').setAttribute('aria-label', 'Minimize or restore Course Helper');\n  panel.querySelector('#ch-close').setAttribute('aria-label', 'Close Course Helper');\n  panel.querySelector('#ch-rate').setAttribute('aria-label', 'Reading speed in words per minute');\n  panel.querySelector('#ch-speed').setAttribute('aria-label', 'Media playback speed');\n  panel.querySelector('#ch-alert').setAttribute('aria-live', 'polite');\n  panel.querySelector('#ch-status').setAttribute('aria-live', 'polite');\n  // Distinct navigation controls are easier to identify at a glance.\n  panel.querySelector('#ch-next').title = 'Advance to the next slide when available';\n  panel.querySelector('#ch-paragraph').title = 'Finish the current accessible narration';\n\n  document.body.append(panel);\n\n  const $ = id => panel.querySelector('#' + id);\n\n  const later = (fn, ms) => { const id = setTimeout(() => { state.delays.delete(id); if (panel.isConnected) fn(); }, ms); state.delays.add(id); return id; };\n\n  const docs = () => {\n    const out = [];\n    const visit = doc => {\n      if (!doc || out.includes(doc)) return;\n      out.push(doc);\n      for (const frame of doc.querySelectorAll('iframe,frame')) {\n        try { visit(frame.contentDocument); } catch {}\n      }\n    };\n    visit(document);\n    return out;\n  };\n\n  const visible = el => {\n    if (panel.contains(el) || !el.getClientRects().length) return false;\n    const view = el.ownerDocument.defaultView;\n    if (!view || view.getComputedStyle(el).visibility === 'hidden') return false;\n    try {\n      const frame = view.frameElement;\n      if (frame && !visible(frame)) return false;\n    } catch {}\n    return true;\n  };\n\n  const label = el =>\n    (\n      el.getAttribute('aria-label') ||\n      el.innerText ||\n      el.textContent ||\n      el.value ||\n      ''\n    ).trim().toLowerCase();\n\n  function assessment() {\n    for (const doc of docs()) {\n      const quizText = [...doc.querySelectorAll('main, article, [role=main], .slide, .question, .quiz')]\n        .filter(el => visible(el) && !panel.contains(el))\n        .map(el => el.innerText || '').join(' ').slice(0,18000).toLowerCase();\n\n      const answerInputs = [...doc.querySelectorAll('input[type=radio],input[type=checkbox],[role=radio],[role=checkbox]')].some(visible);\n      const actionButtons = [...doc.querySelectorAll('button,[role=button],input[type=submit]')]\n        .filter(visible).some(el => /^(submit|check answer|try again|show answer|submit answer)/i.test(label(el)));\n      const questionPhrases = /(select the correct|which of the following|choose the correct|true or false|submit answer|check answer)/.test(quizText);\n      // Labels and course-menu mentions alone do not block progress.\n      if (answerInputs || actionButtons || questionPhrases) return true;\n    }\n\n    return false;\n  }\n\n  function readCompletion() {\n    // Read-only status; do not manipulate SCORM progress.\n    const lines = [];\n    const seen = new Set();\n    let current = window;\n    for (let depth = 0; depth \u003c 6 && current; depth++) {\n      try {\n        for (const key of ['API_1484_11', 'API']) {\n          const api = current[key];\n          if (!api || seen.has(api)) continue;\n          seen.add(api);\n          try {\n            if (key === 'API_1484_11' && typeof api.GetValue === 'function') {\n              lines.push('SCORM 2004 completion: ' + (api.GetValue('cmi.completion_status') || 'unknown'));\n              lines.push('SCORM 2004 success: ' + (api.GetValue('cmi.success_status') || 'unknown'));\n            } else if (key === 'API' && typeof api.LMSGetValue === 'function') {\n              lines.push('SCORM 1.2 lesson status: ' + (api.LMSGetValue('cmi.core.lesson_status') || 'unknown'));\n            }\n          } catch { lines.push('SCORM API located but status was inaccessible'); }\n        }\n        if (current.parent === current) break;\n        current = current.parent;\n      } catch { break; }\n    }\n    const visibleStatus = docs().flatMap(d => [...d.querySelectorAll('[role=status],.completion-status,.course-status')])\n      .filter(visible).map(el => (el.innerText || '').trim()).filter(Boolean).slice(0,5);\n    if (visibleStatus.length) lines.push('Visible status: ' + visibleStatus.join(' | ').slice(0,350));\n    if (!lines.length) lines.push('No accessible completion status. Verify in the learner dashboard.');\n    return lines.join('\\n');\n  }\n\n  function upcomingQuiz() {\n    const results = [];\n    for (const doc of docs()) {\n      for (const el of doc.querySelectorAll('nav a,aside a,[role=navigation] a,.toc li,.menu li')) {\n        if (!visible(el)) continue;\n        const t = (el.innerText || '').trim();\n        if (t.length \u003c 160 && /(quiz|knowledge check|assessment|test)/i.test(t)) results.push(t);\n      }\n    }\n    return [...new Set(results)].slice(0,6);\n  }\n\n  function diagnose() {\n    return [\n      'Helper: loaded',\n      'Accessible documents: ' + docs().length,\n      'Media found: ' + media().length,\n      'Words shown: ' + refresh(),\n      'Quiz or interaction: ' + (assessment() ? 'possibly detected' : 'not detected'),\n      'Slide signature: ' + (slideSignature() ? 'available' : 'not available'),\n      readCompletion()\n    ].join('\\n');\n  }\n\n  function status(message) {\n    $('ch-status').textContent = message;\n  }\n\n  function refresh() {\n    const chunks = [];\n\n    for (const doc of docs()) {\n      for (const el of doc.querySelectorAll('main p,article p,[role=main] p,.slide p,h1,h2,h3')) {\n        if (visible(el) && !panel.contains(el)) {\n          let t = (el.innerText || '').trim();\n\n          if (\n            t.length > 15 &&\n            t.length \u003c 2500 &&\n            !chunks.includes(t)\n          ) {\n            chunks.push(t);\n          }\n        }\n      }\n    }\n\n    $('ch-text').textContent =\n      chunks.slice(0, 30).join('\\n\\n') ||\n      'No readable text detected in this slide.';\n\n    return chunks.join(' ').split(/\\s+/).filter(Boolean).length;\n  }\n\n  function slideSignature() {\n    return docs().map(doc => [...doc.querySelectorAll('main,article,[role=main],.slide')]\n      .filter(visible).map(el => (el.innerText || '').trim().slice(0,800)).join('|')).join('||');\n  }\n\n  function media() {\n    return docs()\n      .flatMap(d => [...d.querySelectorAll('audio,video')])\n      .filter(m => !panel.contains(m));\n  }\n\n  function speed() {\n    for (const m of media()) {\n      try {\n        m.playbackRate = state.speed;\n      } catch {}\n    }\n  }\n\n  function finish() {\n    if (assessment()) {\n      stop('Quiz or interaction detected. Complete it manually.');\n      return false;\n    }\n\n    let count = 0;\n\n    for (const m of media()) {\n      try {\n        if (\n          Number.isFinite(m.duration) &&\n          m.duration > 0\n        ) {\n          m.currentTime = Math.max(0, m.duration - .05);\n          count++;\n        }\n      } catch {}\n    }\n\n    if (count) state.pendingNarration = true;\n    status(\n      count\n        ? `Finished ${count} media segment(s).`\n        : 'No accessible media timeline. Use the platform controls.'\n    );\n\n    later(refresh, 450);\n    return count > 0;\n  }\n\n  function nav(dir) {\n    if (assessment()) {\n      stop('Question or interaction detected. Complete it manually.');\n      return false;\n    }\n    const terms = dir === 'next' ? ['next','continue','next slide'] : ['back','previous','previous slide'];\n    const candidates = [];\n    for (const doc of docs()) {\n      for (const el of doc.querySelectorAll('button,a,[role=\"button\"],input[type=\"button\"]')) {\n        if (!visible(el) || el.disabled || el.getAttribute('aria-disabled') === 'true') continue;\n        const name = label(el);\n        if (!terms.some(t => name === t || name.startsWith(t + ' '))) continue;\n        const context = el.closest('main,article,[role=main],.slide,.content,.player');\n        candidates.push({el, score: (context ? 10 : 0) + (name === terms[0] ? 2 : 0)});\n      }\n    }\n    candidates.sort((a,b)=>b.score-a.score);\n    if (!candidates.length) {\n      status('No available ' + dir + ' control. Use course navigation.');\n      return false;\n    }\n    if (candidates.length > 1 && candidates[0].score === candidates[1].score) {\n      status('Several navigation buttons found. Use the course Next/Back control to avoid the wrong action.');\n      return false;\n    }\n    const before = slideSignature();\n    candidates[0].el.click();\n    state.pendingNarration = false;\n    later(() => {\n      refresh();\n      if (slideSignature() === before) {\n        status('Navigation attempted but slide change not confirmed. Check course page.');\n        if (state.auto) stop('Auto stopped: slide change not confirmed.');\n      } else {\n        status('Slide content changed. Check LMS progress separately.');\n      }\n    }, 900);\n    return true;\n  }\n\n  function stop(reason) {\n    state.auto = false;\n    clearTimeout(state.timer);\n    state.epoch++;\n\n    $('ch-auto').textContent = 'Start auto';\n\n    if (reason) {\n      status(reason);\n    }\n  }\n\n  function cycle() {\n    if (!state.auto) return;\n    const epoch = state.epoch;\n    let signature = slideSignature();\n    let started = Date.now();\n    let observedMedia = new Set();\n\n    const check = () => {\n      if (!state.auto || epoch !== state.epoch) return;\n      if (assessment()) {\n        stop('Quiz or interaction detected. Complete it manually.');\n        return;\n      }\n      const current = slideSignature();\n      if (current !== signature) {\n        signature = current;\n        started = Date.now();\n        observedMedia.clear();\n      }\n      const words = refresh();\n      // Visible video and playing/previously played audio belong to the active\n      // slide. Do not wait for hidden, untouched media from other slides.\n      const tracks = media().filter(m =>\n        visible(m) || (!m.paused && !m.ended) ||\n        (m.currentTime > 0 && !m.ended) || observedMedia.has(m)\n      );\n      tracks.forEach(m => observedMedia.add(m));\n      const readingMs = Math.max(3000, Math.ceil(words / state.wpm * 60000));\n      const elapsed = Date.now() - started;\n      if (tracks.length) {\n        if (!tracks.every(m => m.ended)) {\n          status('Auto: waiting for slide media to finish. Play it if paused.');\n          state.timer = setTimeout(check, 500);\n          return;\n        }\n        // Give the course time to enable Next after its media-ended handler.\n        if (elapsed \u003c 1000) {\n          state.timer = setTimeout(check, 500);\n          return;\n        }\n      } else if (!words) {\n        if (elapsed >= 15000) {\n          stop('No accessible slide text or media. Use the course controls.');\n          return;\n        }\n        status('Auto: waiting for slide content to load\u2026');\n        state.timer = setTimeout(check, 500);\n        return;\n      } else if (elapsed \u003c readingMs) {\n        status('Auto: reading slide; ' + Math.ceil((readingMs - elapsed) / 1000) + 's remaining.');\n        state.timer = setTimeout(check, 500);\n        return;\n      }\n      if (nav('next')) {\n        state.timer = setTimeout(cycle, 1200);\n      } else {\n        stop('Next unavailable. Complete any slide interaction or check course completion.');\n      }\n    };\n    check();\n  }\n\n  $('ch-prev').onclick = () => {\n    stop();\n    state.pendingNarration = false;\n    nav('previous');\n  };\n\n  $('ch-paragraph').onclick = () => {\n    stop();\n    finish();\n  };\n\n  $('ch-next').onclick = () => {\n    stop();\n    if (assessment()) return status('Quiz or interaction detected. Complete it manually.');\n    if (state.pendingNarration) {\n      state.pendingNarration = false;\n      nav('next');\n    } else if (!finish()) nav('next');\n  };\n\n  $('ch-auto').onclick = () => {\n    if (state.auto) {\n      stop('Paused');\n      return;\n    }\n\n    state.auto = true;\n    $('ch-auto').textContent = 'Pause auto';\n    cycle();\n  };\n\n  $('ch-refresh').onclick = refresh;\n\n  $('ch-rate').oninput = e => {\n    state.wpm = +e.target.value;\n    $('ch-rate-label').textContent = state.wpm;\n  };\n\n  $('ch-speed').onchange = e => {\n    state.speed = +e.target.value;\n    speed();\n  };\n\n  $('ch-keys').onchange = e => {\n    state.keyboard = e.target.checked;\n  };\n\n  $('ch-preview').onclick = () => {\n    const hits = upcomingQuiz();\n    $('ch-preview-result').textContent = hits.length\n      ? 'Possible quizzes in visible navigation:\\n\u2022 ' + hits.join('\\n\u2022 ')\n      : 'No upcoming quiz visible in accessible course navigation; not a guarantee.';\n  };\n  $('ch-check').onclick = () => { $('ch-diagnostic-result').textContent = readCompletion(); };\n  $('ch-diagnose').onclick = () => { $('ch-diagnostic-result').textContent = diagnose(); };\n\n  $('ch-suggest').onclick = () => {\n    const text = docs().map(d => d.body?.innerText || '').join('\\n');\n    const lines = text.split('\\n').map(x=>x.trim()).filter(x=>x.length>20 && x.length\u003c500);\n    const hints = lines.filter(x => /(because|therefore|means|defined|refers to|is the|are the|important|remember|correct)/i.test(x)).slice(0,12);\n    $('ch-clues').textContent = hints.length ? 'Possible lesson clues (not verified answers):\\n\u2022 ' + hints.join('\\n\u2022 ') : 'No answer clues found in visible lesson text. Use Copy visible question text to research the answer.';\n  };\n\n  $('ch-copy').onclick = async () => {\n    let text = docs().flatMap(d => [...d.querySelectorAll('main,article,[role=main],.slide,.question')].filter(visible).map(e => e.innerText || '')).join('\\n').slice(0,15000);\n\n    try {\n      await navigator.clipboard.writeText(text);\n      status(\n        'Visible text copied. Clipboard may persist after closing.'\n      );\n    } catch {\n      status('Clipboard access blocked.');\n    }\n  };\n\n  let minimized = false;\n\n  $('ch-min').onclick = () => {\n    if (!minimized) {\n      state.lastExpandedHeight = panel.getBoundingClientRect().height;\n    }\n    minimized = !minimized;\n    $('ch-body').style.display = minimized ? 'none' : 'block';\n    panel.style.resize = minimized ? 'none' : 'both';\n    panel.style.height = minimized\n      ? '48px'\n      : Math.min(state.lastExpandedHeight, innerHeight * 0.9) + 'px';\n    $('ch-min').textContent = minimized ? '\u25a1' : '\u2212';\n    $('ch-min').title = minimized ? 'Restore panel' : 'Minimize panel';\n  };\n\n  let drag = null;\n  const head = $('ch-head');\n\n  head.addEventListener('pointerdown', e => {\n    if (e.target.closest('button')) return;\n\n    const rect = panel.getBoundingClientRect();\n\n    drag = {\n      dx: e.clientX - rect.left,\n      dy: e.clientY - rect.top,\n      id: e.pointerId\n    };\n\n    head.setPointerCapture(e.pointerId);\n    e.preventDefault();\n  });\n\n  head.addEventListener('pointermove', e => {\n    if (!drag || drag.id !== e.pointerId) return;\n\n    panel.style.right = 'auto';\n\n    panel.style.left =\n      Math.max(\n        0,\n        Math.min(\n          innerWidth - panel.offsetWidth,\n          e.clientX - drag.dx\n        )\n      ) + 'px';\n\n    panel.style.top =\n      Math.max(\n        0,\n        Math.min(\n          innerHeight - panel.offsetHeight,\n          e.clientY - drag.dy\n        )\n      ) + 'px';\n  });\n\n  head.addEventListener('pointerup', () => drag = null);\n  head.addEventListener('pointercancel', () => drag = null);\n\n  function keys(e) {\n    if (\n      !state.keyboard ||\n      !e.altKey ||\n      e.ctrlKey ||\n      e.metaKey ||\n      e.repeat ||\n      e.target.closest?.(\n        'input,textarea,select,[contenteditable]'\n      )\n    ) {\n      return;\n    }\n\n    if (e.key === 'ArrowRight') {\n      e.preventDefault();\n      stop();\n      $('ch-next').click();\n    } else if (e.key === 'ArrowLeft') {\n      e.preventDefault();\n      stop();\n      nav('previous');\n    } else if (e.key === 'ArrowDown') {\n      e.preventDefault();\n      stop();\n      finish();\n    }\n  }\n\n  document.addEventListener('keydown', keys, true);\n\n  state.tick = setInterval(() => {\n    $('ch-alert').textContent = assessment()\n      ? 'QUIZ / INTERACTION DETECTED. Auto will pause.'\n      : 'CONTENT SLIDE. Quiz not currently detected.';\n\n    speed();\n  }, 1000);\n\n  function cleanup() {\n    stop();\n    state.pendingNarration = false;\n    clearInterval(state.tick);\n    for (const id of state.delays) clearTimeout(id);\n    state.delays.clear();\n    document.removeEventListener('keydown', keys, true);\n    panel.remove();\n    document.getElementById('course-helper-pc-theme')?.remove();\n    delete window.__chPCStop;\n  }\n\n  $('ch-close').onclick = cleanup;\n  window.__chPCStop = cleanup;\n\n  refresh();\n  speed();\n\n  status('Ready. Direct install active. Open Diagnostics if lesson content is missing.');\n})();\n"</script><script>
+const code=JSON.parse(document.getElementById('payload').textContent);
+const field=document.getElementById('code');
+const result=document.getElementById('status');
+function selectCode(){field.focus();field.select();field.setSelectionRange(0,field.value.length);}
+document.getElementById('copy').onclick=()=>{
+  // Synchronous fallback keeps the click's user activation on local files.
+  selectCode();
+  let copied=false;
+  try{copied=document.execCommand('copy');}catch{}
+  if(copied){result.textContent='Copied. Paste into your course Console and press Enter.';return;}
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(code).then(()=>{result.textContent='Copied. Paste into your course Console and press Enter.';},()=>{selectCode();result.textContent='Code selected. Press Ctrl+C (Mac: Command+C), then paste into your course Console.';});
+  }else{result.textContent='Code selected. Press Ctrl+C (Mac: Command+C), then paste into your course Console.';}
+};
+</script></html>
