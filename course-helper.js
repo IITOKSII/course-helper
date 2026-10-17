@@ -264,7 +264,7 @@
 
   function diagnose() {
     return [
-      'Helper: loaded',
+      'Helper: timeline-wait build 2026-10-17.5',
       'Accessible documents: ' + docs().length,
       'Media found: ' + media().length,
       ...media().map(m => 'Media: ' + m.tagName + ' time=' + m.currentTime + '/' + m.duration + ' paused=' + m.paused + ' ended=' + m.ended),
@@ -356,6 +356,27 @@
     return count > 0;
   }
 
+  function controlDisabled(el) {
+    return !!el.disabled || el.getAttribute('disabled') !== null ||
+      el.getAttribute('aria-disabled') === 'true' ||
+      !!el.closest('[aria-disabled="true"],.disabled,.is-disabled,.cs-disabled');
+  }
+  function timelinePending() {
+    for (const doc of docs()) {
+      for (const el of doc.querySelectorAll('[role="slider"],[role="progressbar"],input[type="range"]')) {
+        if (!visible(el)) continue;
+        const name = [el.id, label(el), el.className].join(' ');
+        if (!/seek|timeline|progress|scrub/i.test(name) || /volume/i.test(name)) continue;
+        const rawValue = el.getAttribute('aria-valuenow') ?? (el.tagName === 'INPUT' ? el.value : null);
+        const rawMax = el.getAttribute('aria-valuemax') ?? (el.tagName === 'INPUT' ? el.max : null);
+        if (rawValue === null || rawMax === null || rawMax === '') continue;
+        const value = Number(rawValue), max = Number(rawMax);
+        if (Number.isFinite(value) && max > 0 && value < max - Math.max(0.01, max * 0.001)) return true;
+      }
+    }
+    return false;
+  }
+
   function nav(dir) {
     if (assessment()) {
       stop('Question or interaction detected. Complete it manually.');
@@ -365,7 +386,7 @@
     const candidates = [];
     for (const doc of docs()) {
       for (const el of doc.querySelectorAll('button,a,[role="button"],input[type="button"],#next,#prev,#next-btn,#prev-btn,[data-action="next"],[data-action="previous"]')) {
-        if (!visible(el) || el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
+        if (!visible(el) || controlDisabled(el)) continue;
         const name = label(el);
         const controlId = (el.id || '').toLowerCase();
         const known = dir === 'next' ? /^(next|next-btn|next-button|next_slide)$/ : /^(prev|previous|prev-btn|previous-button)$/;
@@ -559,11 +580,7 @@
           state.timer = setTimeout(check, 500);
           return;
         }
-      } else if (!words) {
-        if (elapsed >= 15000) {
-          stop('No accessible slide text or media. Use the course controls.');
-          return;
-        }
+      } else if (!words && elapsed < 3000) {
         status('Auto: waiting for slide content to load…');
         state.timer = setTimeout(check, 500);
         return;
@@ -572,16 +589,18 @@
         state.timer = setTimeout(check, 500);
         return;
       }
+      if (timelinePending()) {
+        status('Auto: waiting for the course timeline to finish.');
+        state.timer = setTimeout(check, 500);
+        return;
+      }
       if (nav('next')) {
         state.timer = setTimeout(cycle, 2800);
       } else {
-        if (nextWaitStarted === null) nextWaitStarted = Date.now();
-        if (Date.now() - nextWaitStarted < 10000) {
-          status('Auto: slide finished; waiting for the course Next button to become available…');
-          state.timer = setTimeout(check, 500);
-        } else {
-          stop('Auto cannot find an enabled course Next button. Open Diagnostics and copy the navigation details.');
-        }
+        // Storyline may lock Next for the entire timeline. Keep Auto armed
+        // until the real course control unlocks or the user pauses/closes.
+        status('Auto: waiting for the course Next button to unlock. Pause auto to stop.');
+        state.timer = setTimeout(check, 500);
       }
     };
     check();
@@ -800,5 +819,5 @@
   refresh();
   speed();
 
-  status('Ready. Direct install active. Open Diagnostics if lesson content is missing.');
+  status('Ready · build 17.5. Auto waits for timeline and Next unlock.');
 })();
