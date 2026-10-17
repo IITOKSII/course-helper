@@ -403,56 +403,64 @@
 
   function cycle() {
     if (!state.auto) return;
-
-    if (assessment()) {
-      stop('Quiz or interaction detected. Complete it manually.');
-      return;
-    }
-
-    let words = refresh();
-    if (!words) {
-      stop('No readable lesson content detected. Automatic navigation paused for safety.');
-      return;
-    }
-
-    let seconds = Math.max(
-      3,
-      Math.min(
-        25,
-        Math.ceil(words / state.wpm * 60)
-      )
-    );
-
-    status(
-      `Reading ${words} words; next attempt in ${seconds}s.`
-    );
-
     const epoch = state.epoch;
-    state.timer = setTimeout(() => {
+    let signature = slideSignature();
+    let started = Date.now();
+    let observedMedia = new Set();
+
+    const check = () => {
       if (!state.auto || epoch !== state.epoch) return;
-
       if (assessment()) {
-        stop('Quiz detected.');
+        stop('Quiz or interaction detected. Complete it manually.');
         return;
       }
-
-      finish();
-      if (!state.auto || epoch !== state.epoch || assessment()) {
-        if (state.auto && assessment()) stop('Quiz or interaction appeared.');
-        return;
+      const current = slideSignature();
+      if (current !== signature) {
+        signature = current;
+        started = Date.now();
+        observedMedia.clear();
       }
-
-      state.timer = setTimeout(() => {
-        if (!state.auto || epoch !== state.epoch) return;
-
-        if (nav('next')) {
-          state.timer = setTimeout(cycle, 1200);
-        } else {
-          stop('Next unavailable. Check course completion.');
+      const words = refresh();
+      // Visible video and playing/previously played audio belong to the active
+      // slide. Do not wait for hidden, untouched media from other slides.
+      const tracks = media().filter(m =>
+        visible(m) || (!m.paused && !m.ended) ||
+        (m.currentTime > 0 && !m.ended) || observedMedia.has(m)
+      );
+      tracks.forEach(m => observedMedia.add(m));
+      const readingMs = Math.max(3000, Math.ceil(words / state.wpm * 60000));
+      const elapsed = Date.now() - started;
+      if (tracks.length) {
+        if (!tracks.every(m => m.ended)) {
+          status('Auto: waiting for slide media to finish. Play it if paused.');
+          state.timer = setTimeout(check, 500);
+          return;
         }
-      }, 650);
-
-    }, seconds * 1000);
+        // Give the course time to enable Next after its media-ended handler.
+        if (elapsed < 1000) {
+          state.timer = setTimeout(check, 500);
+          return;
+        }
+      } else if (!words) {
+        if (elapsed >= 15000) {
+          stop('No accessible slide text or media. Use the course controls.');
+          return;
+        }
+        status('Auto: waiting for slide content to load…');
+        state.timer = setTimeout(check, 500);
+        return;
+      } else if (elapsed < readingMs) {
+        status('Auto: reading slide; ' + Math.ceil((readingMs - elapsed) / 1000) + 's remaining.');
+        state.timer = setTimeout(check, 500);
+        return;
+      }
+      if (nav('next')) {
+        state.timer = setTimeout(cycle, 1200);
+      } else {
+        stop('Next unavailable. Complete any slide interaction or check course completion.');
+      }
+    };
+    check();
   }
 
   $('ch-prev').onclick = () => {
