@@ -1,4 +1,3 @@
-
 (() => {
   'use strict';
 
@@ -166,23 +165,28 @@
   const later = (fn, ms) => { const id = setTimeout(() => { state.delays.delete(id); if (panel.isConnected) fn(); }, ms); state.delays.add(id); return id; };
 
   const docs = () => {
-    const out = [document];
-
-    for (const f of document.querySelectorAll('iframe')) {
-      try {
-        if (f.contentDocument) {
-          out.push(f.contentDocument);
-        }
-      } catch {}
-    }
-
+    const out = [];
+    const visit = doc => {
+      if (!doc || out.includes(doc)) return;
+      out.push(doc);
+      for (const frame of doc.querySelectorAll('iframe,frame')) {
+        try { visit(frame.contentDocument); } catch {}
+      }
+    };
+    visit(document);
     return out;
   };
 
-  const visible = el =>
-    !!el.getClientRects().length &&
-    !panel.contains(el) &&
-    getComputedStyle(el).visibility !== 'hidden';
+  const visible = el => {
+    if (panel.contains(el) || !el.getClientRects().length) return false;
+    const view = el.ownerDocument.defaultView;
+    if (!view || view.getComputedStyle(el).visibility === 'hidden') return false;
+    try {
+      const frame = view.frameElement;
+      if (frame && !visible(frame)) return false;
+    } catch {}
+    return true;
+  };
 
   const label = el =>
     (
@@ -605,7 +609,7 @@
     if (e.key === 'ArrowRight') {
       e.preventDefault();
       stop();
-      nav('next');
+      $('ch-next').click();
     } else if (e.key === 'ArrowLeft') {
       e.preventDefault();
       stop();
@@ -645,7 +649,5 @@
   refresh();
   speed();
 
-  status(
-    'Ready. Resize by dragging the bottom-right corner.'
-  );
+  status('Ready. Direct install active. Open Diagnostics if lesson content is missing.');
 })();
