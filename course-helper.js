@@ -191,6 +191,8 @@
   const label = el =>
     (
       el.getAttribute('aria-label') ||
+      el.getAttribute('title') ||
+      el.getAttribute('data-tooltip') ||
       el.innerText ||
       el.textContent ||
       el.value ||
@@ -262,6 +264,8 @@
       'Helper: loaded',
       'Accessible documents: ' + docs().length,
       'Media found: ' + media().length,
+      ...media().map(m => 'Media: ' + m.tagName + ' time=' + m.currentTime + '/' + m.duration + ' paused=' + m.paused + ' ended=' + m.ended),
+      'Navigation controls: ' + docs().flatMap(d => [...d.querySelectorAll('button,a,[role=button],#next,#next-btn')]).filter(visible).filter(e => /next|continue|prev/i.test(label(e) + ' ' + e.id)).map(e => JSON.stringify({label:label(e),id:e.id,disabled:!!e.disabled,ariaDisabled:e.getAttribute('aria-disabled')})).slice(0,12).join(' | '),
       'Words shown: ' + refresh(),
       'Quiz or interaction: ' + (assessment() ? 'possibly detected' : 'not detected'),
       'Slide signature: ' + (slideSignature() ? 'available' : 'not available'),
@@ -357,10 +361,13 @@
     const terms = dir === 'next' ? ['next','continue','next slide'] : ['back','previous','previous slide'];
     const candidates = [];
     for (const doc of docs()) {
-      for (const el of doc.querySelectorAll('button,a,[role="button"],input[type="button"]')) {
+      for (const el of doc.querySelectorAll('button,a,[role="button"],input[type="button"],#next,#prev,#next-btn,#prev-btn,[data-action="next"],[data-action="previous"]')) {
         if (!visible(el) || el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
         const name = label(el);
-        if (!terms.some(t => name === t || name.startsWith(t + ' '))) continue;
+        const controlId = (el.id || '').toLowerCase();
+        const known = dir === 'next' ? /^(next|next-btn|next-button|next_slide)$/ : /^(prev|previous|prev-btn|previous-button)$/;
+        const normalized = name.replace(/[▶►◀◄→←]/g, '').trim();
+        if (!known.test(controlId) && !terms.some(t => normalized === t || normalized.startsWith(t + ' ') || normalized.startsWith(t + ' ('))) continue;
         const context = el.closest('main,article,[role=main],.slide,.content,.player');
         candidates.push({el, score: (context ? 10 : 0) + (name === terms[0] ? 2 : 0)});
       }
@@ -379,13 +386,13 @@
     state.pendingNarration = false;
     later(() => {
       refresh();
-      if (slideSignature() === before) {
+      if (before && slideSignature() === before) {
         status('Navigation attempted but slide change not confirmed. Check course page.');
-        if (state.auto) stop('Auto stopped: slide change not confirmed.');
+        if (state.auto) stop('Auto paused: the course did not confirm a slide change. Open Diagnostics.');
       } else {
         status('Slide content changed. Check LMS progress separately.');
       }
-    }, 900);
+    }, 2500);
     return true;
   }
 
@@ -407,6 +414,7 @@
     let signature = slideSignature();
     let started = Date.now();
     let observedMedia = new Set();
+    let nextWaitStarted = null;
 
     const check = () => {
       if (!state.auto || epoch !== state.epoch) return;
@@ -417,8 +425,9 @@
       const current = slideSignature();
       if (current !== signature) {
         signature = current;
-        started = Date.now();
-        observedMedia.clear();
+        // Animated captions change text without starting a new slide.
+        // Reset only when an actual navigation cycle begins.
+        if (nextWaitStarted !== null) nextWaitStarted = null;
       }
       const words = refresh();
       // Visible video and playing/previously played audio belong to the active
@@ -431,7 +440,7 @@
       const readingMs = Math.max(3000, Math.ceil(words / state.wpm * 60000));
       const elapsed = Date.now() - started;
       if (tracks.length) {
-        if (!tracks.every(m => m.ended)) {
+        if (!tracks.every(m => m.ended || (Number.isFinite(m.duration) && m.duration > 0 && m.currentTime >= m.duration - 0.15))) {
           status('Auto: waiting for slide media to finish. Play it if paused.');
           state.timer = setTimeout(check, 500);
           return;
@@ -455,9 +464,15 @@
         return;
       }
       if (nav('next')) {
-        state.timer = setTimeout(cycle, 1200);
+        state.timer = setTimeout(cycle, 2800);
       } else {
-        stop('Next unavailable. Complete any slide interaction or check course completion.');
+        if (nextWaitStarted === null) nextWaitStarted = Date.now();
+        if (Date.now() - nextWaitStarted < 10000) {
+          status('Auto: slide finished; waiting for the course Next button to become available…');
+          state.timer = setTimeout(check, 500);
+        } else {
+          stop('Auto cannot find an enabled course Next button. Open Diagnostics and copy the navigation details.');
+        }
       }
     };
     check();
