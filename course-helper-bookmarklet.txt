@@ -1,0 +1,1 @@
+javascript:(()=>{const s=document.createElement('script');s.src='https://raw.githubusercontent.com/IITOKSII/course-helper/main/course-helper.js?t='+Date.now();s.onload=()=>console.info('Course Helper loaded from GitHub');s.onerror=()=>alert('Course Helper could not load from GitHub');document.documentElement.appendChild(s)})();
