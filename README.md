@@ -2,48 +2,43 @@
   "version": "19.5",
   "wasRunning": false,
   "phase": "opening",
-  "previousStatus": "Report selected. Press Ctrl+C to copy it.",
+  "previousStatus": "No visible response was detected for this information button. Open it manually, then show diagnostics.",
   "documents": 1,
   "blockedFrames": 0,
-  "checks": 11,
+  "checks": 9,
   "error": "",
   "log": [
-    "Information button clicked: 5zy5iEfV3NJ"
+    "Information button clicked: 6FsTmYRDlZw"
   ],
   "next": {
     "id": "next",
     "label": "next",
-    "disabled": false
+    "disabled": true
   },
   "timeline": {
     "known": false,
     "done": false
   },
-  "informationButtons": 1,
-  "informationDetected": 3,
+  "informationButtons": 2,
+  "informationDetected": 2,
   "informationOpened": 1,
   "informationCompleted": 0,
   "visited": 0,
   "popupNext": null,
   "popupScope": true,
   "popupPages": 0,
-  "pending": "5zy5iEfV3NJ",
+  "pending": "6FsTmYRDlZw",
   "interactionMode": null,
   "closeControl": null,
   "buttons": [
     {
-      "id": "5zy5iEfV3NJ",
-      "label": "A company that looks solely at how it produces quality benefits for its customers is more likely to be profitable. Organisations look to enh",
+      "id": "6FsTmYRDlZw",
+      "label": "In general, you can observe the following to identify and clarify your customers' needs:  Click on the buttons to learn more.",
       "visited": false
     },
     {
-      "id": "6PaHVJvBBHH",
-      "label": "Click on the button to learn more.",
-      "visited": false
-    },
-    {
-      "id": "6oD7xO3ZKAv",
-      "label": "",
+      "id": "5c7ZrXZVyq5",
+      "label": "Click on the buttons to learn more.",
       "visited": false
     }
   ]
