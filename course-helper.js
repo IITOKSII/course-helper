@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const VERSION = '19.4';
+  const VERSION = '19.5';
   const KEY = '__courseHelper19';
   if (window[KEY]) { window[KEY].stop(); }
   // Refresh is recommended when replacing older builds. Stop known old timers.
@@ -247,6 +247,29 @@
     }return playing;
   }
 
+
+  function popupScope(){
+    const scopes=state.doc.querySelectorAll('[role="dialog"],[aria-modal="true"],.slide-layer,.layer-container');
+    return [...scopes].reverse().find(el=>visible(el))||null;
+  }
+  function popupNext(){
+    const scope=popupScope();
+    const candidates=(scope||state.doc).querySelectorAll('button,[role="button"],[data-acc-text],[aria-label]');
+    const courseNext=nextIn(state.doc);
+    for(const el of candidates){
+      if(!visible(el)||disabled(el)||el===courseNext||el.id==='next'||el.contains(courseNext)||courseNext?.contains(el))continue;
+      if(/^(next(?:\s+(?:page|step|slide))?|continue|[▶►→›❯])$/i.test(name(el))){
+        const target=el.closest('.slide-object-stategroup[data-model-id]')||el;
+        // Outside an identified dialog, only authored slide objects qualify.
+        if(scope||target.hasAttribute('data-model-id'))return target;
+      }
+    }
+    return null;
+  }
+  function popupPageKey(){
+    const scope=popupScope();
+    return scope?(scope.innerText||scope.textContent||'').trim():lessonText();
+  }
   function interactionSnapshot(){
     const el=state.pending?model(state.pending):null;
     return {text:lessonText(),control:el?[el.getAttribute('aria-expanded'),el.getAttribute('aria-selected'),el.getAttribute('aria-pressed'),el.getAttribute('data-state'),el.className].join('|'):null};
@@ -274,7 +297,7 @@
     }
     const x=popupClose();
     if(state.phase==='opening'){
-      if(x){readPopup();return;}
+      if(x||popupNext()){readPopup('pages');return;}
       const current=interactionSnapshot(),before=state.pendingBefore;
       if(before&&(current.text!==before.text||current.control!==before.control)){
         log('Information revealed without X: '+state.pending);readPopup('inline');return;
@@ -282,7 +305,29 @@
       if(Date.now()>state.deadline)pause('No visible response was detected for this information button. Open it manually, then show diagnostics.');
       return;
     }
+    if(state.phase==='popup-navigation'){
+      const after=popupPageKey();
+      if(after!==state.popupPageBefore||popupClose()){
+        log('Pop-up page changed');readPopup('pages');return;
+      }
+      if(Date.now()>state.deadline)pause('The pop-up Next was clicked, but its next page was not detected. Show diagnostics.');
+      return;
+    }
     if(state.phase==='reading'){
+      const pageNext=popupNext();
+      if(state.interactionMode==='pages'||pageNext){
+        state.interactionMode='pages';
+        if(Date.now()<state.deadline){tell('Reading pop-up page: '+Math.ceil((state.deadline-Date.now())/1000)+' seconds remaining.');return;}
+        if(pageNext){
+          state.popupPageCount=(state.popupPageCount||0)+1;
+          if(state.popupPageCount>50){pause('Pop-up navigation limit reached. Show diagnostics.');return;}
+          state.popupPageBefore=popupPageKey();
+          if(!interact(pageNext)){pause('Pop-up Next could not be clicked.');return;}
+          state.phase='popup-navigation';state.deadline=Date.now()+12000;log('Pop-up Next clicked');return;
+        }
+        if(x){interact(x);state.phase='closing';state.deadline=Date.now()+8000;log('Pop-up X clicked');return;}
+        pause('Waiting for a pop-up Next or close control. Show diagnostics if neither is recognised.');return;
+      }
       if(state.interactionMode==='inline'){
         if(x){readPopup();return;}
         if(Date.now()<state.deadline){tell('Reading revealed information: '+Math.ceil((state.deadline-Date.now())/1000)+' seconds remaining.');return;}
@@ -302,7 +347,7 @@
       state.info=infoButtons();
       const id=state.info.find(item=>!state.visited.has(item)&&!disabled(model(item)));
       if(id){const el=model(id);if(!el)return;
-        state.pending=id;state.pendingBefore=interactionSnapshot();state.interactionMode=null;state.phase='opening';state.deadline=Date.now()+8000;if(interact(el)){state.infoOpened++;log('Information button clicked: '+id);tell('Opening information '+state.infoOpened+' of '+state.info.length+'…');}else{state.pending=null;state.phase='ready';tell('Waiting for information button to become enabled.');}return;}
+        state.popupPageCount=0;state.pending=id;state.pendingBefore=interactionSnapshot();state.interactionMode=null;state.phase='opening';state.deadline=Date.now()+8000;if(interact(el)){state.infoOpened++;log('Information button clicked: '+id);tell('Opening information '+state.infoOpened+' of '+state.info.length+'…');}else{state.pending=null;state.phase='ready';tell('Waiting for information button to become enabled.');}return;}
     }
     const time=timeline();const playing=mediaPlaying();
     if(time.known&&!time.done){tell('Waiting for the course timeline: '+time.value+' / '+time.max);return;}
@@ -344,7 +389,7 @@
   reportButton.onclick=()=>{
     const was=state.running, previous=state.last;pause('Paused for diagnostics.');
     const data={version:VERSION,wasRunning:was,phase:state.phase,previousStatus:previous,documents:state.documents,blockedFrames:state.blockedFrames,checks:state.checks,error:state.failure,log:state.logs};
-    try{if(state.doc){const n=nextIn(state.doc);data.next=n?{id:n.id,label:name(n),disabled:disabled(n)}:null;data.timeline=timeline();data.informationButtons=state.info?.length||0;data.informationDetected=state.infoDetected;data.informationOpened=state.infoOpened;data.informationCompleted=state.infoCompleted;data.visited=state.visited.size;data.pending=state.pending;data.interactionMode=state.interactionMode;data.closeControl=popupClose()?name(popupClose()):null;data.buttons=infoButtons().map(id=>({id,label:name(model(id)),visited:state.visited.has(id)}));}}catch(error){data.inspectionError=String(error);}
+    try{if(state.doc){const n=nextIn(state.doc);data.next=n?{id:n.id,label:name(n),disabled:disabled(n)}:null;data.timeline=timeline();data.informationButtons=state.info?.length||0;data.informationDetected=state.infoDetected;data.informationOpened=state.infoOpened;data.informationCompleted=state.infoCompleted;data.visited=state.visited.size;data.popupNext=popupNext()?name(popupNext()):null;data.popupScope=!!popupScope();data.popupPages=state.popupPageCount||0;data.pending=state.pending;data.interactionMode=state.interactionMode;data.closeControl=popupClose()?name(popupClose()):null;data.buttons=infoButtons().map(id=>({id,label:name(model(id)),visited:state.visited.has(id)}));}}catch(error){data.inspectionError=String(error);}
     reportBox.hidden=false;reportBox.value=JSON.stringify(data,null,2);reportBox.focus();reportBox.select();tell('Report selected. Press Ctrl+C to copy it.');
   };
   let drag=null;
