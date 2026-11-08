@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const VERSION = '19.7';
+  const VERSION = '19.8';
   const KEY = '__courseHelper19';
   if (window[KEY]) { window[KEY].stop(); }
   // Refresh is recommended when replacing older builds. Stop known old timers.
@@ -50,6 +50,7 @@
 
   const state = {running:false,timer:null,doc:null,phase:'idle',deadline:0,signature:'',visited:new Set(),info:null,pending:null,pendingBefore:null,interactionMode:null,infoDetected:0,infoOpened:0,infoCompleted:0,popupNextIds:new Set(),closeIds:new Set(['62CBQWEhsiU']),teachOff:null,documents:0,blockedFrames:0,checks:0,last:'Ready',failure:'',logs:[],closed:false,selectedQuestion:null,selectionListener:null,selectionDocs:new Set()};
   const POLL=1000;
+  const controlRefs=new Map(),controlKeys=new WeakMap();let controlSerial=0;
   function tell(text) { state.last=text; if(statusEl.textContent!==text)statusEl.textContent=text; }
   function log(text) {state.logs.push(text);if(state.logs.length>12)state.logs.shift();}
   function pause(message='Paused. No background checks.') {
@@ -95,6 +96,7 @@
   }
   function model(id){
     if(!state.doc)return null;
+    const ref=controlRefs.get(id);if(ref&&visible(ref))return ref;
     const nodes=state.doc.querySelectorAll('[data-model-id="'+id.replace(/[^\w-]/g,'')+'"]');
     for(const el of nodes)if(el.classList.contains('slide-object-stategroup')&&visible(el))return el;
     for(const el of nodes)if(visible(el))return el;
@@ -138,24 +140,33 @@
     for(let i=0;i<Math.min(els.length,180);i++)if(/^(close(?:\s+(?:popup|pop-up|dialog|layer))?|[×✕✖])$/i.test(name(els[i]))&&visible(els[i]))return els[i];
     return null;
   }
-  function infoButtons(){
-    const out=new Map();
-    const selector='[data-acc-text],[aria-label],[title],button,[role="button"],.slide-object-stategroup[data-model-id]';
-    const els=state.doc.querySelectorAll(selector);
-    const infoLabel=/\b(?:click\s*icon|info(?:rmation)?(?:\s*icon)?|learn\s*more|more\s*info(?:rmation)?|read\s*more|details?|help)\b/i;
-    for(let i=0;i<Math.min(els.length,400);i++){
-      const el=els[i];if(!visible(el))continue;
-      const labels=[el.getAttribute('data-acc-text'),el.getAttribute('aria-label'),el.getAttribute('title'),el.textContent].filter(Boolean).map(v=>v.trim()).filter(Boolean);
-      if(!labels.some(v=>v.length<=100&&infoLabel.test(v)))continue;
-      if(el.matches('.slide-object-textbox,.slide-object-text'))continue;
-      const group=el.closest('.slide-object-stategroup[data-model-id]')||el.closest('[data-model-id]')||(el.matches('[data-model-id]')?el:null);
-      const id=group?.getAttribute('data-model-id');
-      if(id&&visible(group)&&!out.has(id))out.set(id,group);
+  function buttonCandidates(){
+    const selector='.slide-object-stategroup[data-model-id],button,[role="button"],[role="tab"],summary,[data-model-id] .eventable';
+    const controls=new Map();
+    const courseNext=nextIn(state.doc);
+    for(const node of state.doc.querySelectorAll(selector)){
+      if(!visible(node))continue;
+      const el=node.closest('.slide-object-stategroup[data-model-id]')||node;
+      if(!visible(el)||el===courseNext||el.contains(courseNext)||courseNext?.contains(el))continue;
+      const label=name(el);
+      if(/^(next(?: slide| page)?|previous|prev|back|continue|close(?: pop-up| popup)?|menu|home|exit|submit(?: answer)?|check answer|replay|play|pause|mute|volume|settings|resources|help|[×✕✖▶►→›❯])$/i.test(label))continue;
+      const modelId=el.getAttribute('data-model-id');
+      if(modelId&&(state.closeIds.has(modelId)||state.popupNextIds.has(modelId)))continue;
+      // Native controls and authored objects with an explicit pointer cursor qualify.
+      // Labels alone are not proof that a paragraph is clickable.
+      const probes=[el,...el.querySelectorAll('.eventable,[role="button"],[role="tab"],button')];
+      const actionable=probes.some(p=>visible(p)&&(p.matches('button,[role="button"],[role="tab"],summary')||p.ownerDocument.defaultView.getComputedStyle(p).cursor==='pointer'));
+      const inSlide=!!el.closest('.slide,.slide-container,[data-slide-id],main,[role="main"]')||!!modelId;
+      if(!actionable||!inSlide)continue;
+      let id=modelId||controlKeys.get(el);
+      if(!id){id='helper-control-'+(++controlSerial);controlKeys.set(el,id);}
+      controlRefs.set(id,el);controls.set(id,{id,label,disabled:disabled(el)});
     }
-    const known=['5Yf4v0ZEHzB','60IE5Judeh1','6iTVaNjoxjp','5bYJcTGpH9B','6qlRbDy2a3S','5gNe0ZiHI6a','5YT3xfkofN0','5aywoV9m4Fk','5lhh9PFHrxy','6nW3CBlmFjW','6IMFvZXbiYL'];
-    for(const id of known){const el=model(id);if(el&&!out.has(id))out.set(id,el);}
-    state.infoDetected=out.size;
-    return [...out.keys()];
+    return [...controls.values()];
+  }
+  function infoButtons(){
+    const candidates=buttonCandidates();state.infoDetected=candidates.length;
+    return candidates.map(item=>item.id);
   }
 
   // Recommendations are local, evidence-based hints, not AI-generated answers.
@@ -300,7 +311,7 @@
     }
     const x=popupClose();
     if(state.phase==='opening'){
-      if(x||popupNext()||popupScope()){readPopup('pages');return;}
+      if(x||popupNext()||(popupScope()&&popupScope()!==state.popupScopeBefore)){readPopup('pages');return;}
       const current=interactionSnapshot(),before=state.pendingBefore;
       if(before&&(current.text!==before.text||current.control!==before.control)){
         log('Information revealed without X: '+state.pending);readPopup('inline');return;
@@ -319,7 +330,7 @@
     }
     if(state.phase==='reading'){
       const pageNext=popupNext();
-      if(state.interactionMode==='pages'||pageNext||(state.interactionMode==='inline'&&popupScope())){
+      if(state.interactionMode==='pages'||pageNext||(state.interactionMode==='inline'&&popupScope()&&popupScope()!==state.popupScopeBefore)){
         state.interactionMode='pages';
         if(Date.now()<state.deadline){tell('Reading pop-up page: '+Math.ceil((state.deadline-Date.now())/1000)+' seconds remaining.');return;}
         if(pageNext){
@@ -352,7 +363,7 @@
       state.info=infoButtons();
       const id=state.info.find(item=>!state.visited.has(item)&&!disabled(model(item)));
       if(id){const el=model(id);if(!el)return;
-        state.popupPageCount=0;state.pending=id;state.pendingBefore=interactionSnapshot();state.interactionMode=null;state.phase='opening';state.deadline=Date.now()+120000;if(interact(el)){state.infoOpened++;log('Information button clicked: '+id);tell('Opening information '+state.infoOpened+' of '+state.info.length+'…');}else{state.pending=null;state.phase='ready';tell('Waiting for information button to become enabled.');}return;}
+        state.popupScopeBefore=popupScope();state.popupPageCount=0;state.pending=id;state.pendingBefore=interactionSnapshot();state.interactionMode=null;state.phase='opening';state.deadline=Date.now()+120000;if(interact(el)){state.infoOpened++;log('Information button clicked: '+id);tell('Opening information '+state.infoOpened+' of '+state.info.length+'…');}else{state.pending=null;state.phase='ready';tell('Waiting for information button to become enabled.');}return;}
     }
     const time=timeline();const playing=mediaPlaying();
     if(time.known&&!time.done){tell('Waiting for the course timeline: '+time.value+' / '+time.max);return;}
@@ -412,7 +423,7 @@
   reportButton.onclick=()=>{
     const was=state.running, previous=state.last;pause('Paused for diagnostics.');
     const data={version:VERSION,wasRunning:was,phase:state.phase,previousStatus:previous,documents:state.documents,blockedFrames:state.blockedFrames,checks:state.checks,error:state.failure,log:state.logs};
-    try{if(state.doc){const n=nextIn(state.doc);data.next=n?{id:n.id,label:name(n),disabled:disabled(n)}:null;data.timeline=timeline();data.informationButtons=state.info?.length||0;data.informationDetected=state.infoDetected;data.informationOpened=state.infoOpened;data.informationCompleted=state.infoCompleted;data.visited=state.visited.size;data.popupNext=popupNext()?name(popupNext()):null;data.popupScope=!!popupScope();data.popupControls=[...(popupScope()||state.doc).querySelectorAll('button,[role="button"],[data-acc-text],[aria-label],.slide-object-stategroup[data-model-id]')].filter(visible).slice(0,50).map(el=>({id:el.getAttribute('data-model-id')||el.id,label:name(el),disabled:disabled(el)}));data.popupPages=state.popupPageCount||0;data.pending=state.pending;data.interactionMode=state.interactionMode;data.closeControl=popupClose()?name(popupClose()):null;data.buttons=infoButtons().map(id=>({id,label:name(model(id)),visited:state.visited.has(id)}));}}catch(error){data.inspectionError=String(error);}
+    try{if(state.doc){const n=nextIn(state.doc);data.next=n?{id:n.id,label:name(n),disabled:disabled(n)}:null;data.timeline=timeline();data.informationButtons=state.info?.length||0;data.informationDetected=state.infoDetected;data.informationOpened=state.infoOpened;data.informationCompleted=state.infoCompleted;data.visited=state.visited.size;data.popupNext=popupNext()?name(popupNext()):null;data.popupScope=!!popupScope();data.popupControls=[...(popupScope()||state.doc).querySelectorAll('button,[role="button"],[data-acc-text],[aria-label],.slide-object-stategroup[data-model-id]')].filter(visible).slice(0,50).map(el=>({id:el.getAttribute('data-model-id')||el.id,label:name(el),disabled:disabled(el)}));data.popupPages=state.popupPageCount||0;data.pending=state.pending;data.interactionMode=state.interactionMode;data.closeControl=popupClose()?name(popupClose()):null;data.buttons=buttonCandidates().map(item=>({...item,visited:state.visited.has(item.id)}));data.visibleObjects=[...state.doc.querySelectorAll('.slide-object-stategroup[data-model-id]')].filter(visible).slice(0,60).map(el=>({id:el.getAttribute('data-model-id'),label:name(el),cursor:el.ownerDocument.defaultView.getComputedStyle(el).cursor,eventableCursors:[...el.querySelectorAll('.eventable')].filter(visible).slice(0,4).map(p=>p.ownerDocument.defaultView.getComputedStyle(p).cursor)}));}}catch(error){data.inspectionError=String(error);}
     reportBox.hidden=false;reportBox.value=JSON.stringify(data,null,2);reportBox.focus();reportBox.select();tell('Report selected. Press Ctrl+C to copy it.');
   };
   let drag=null;
