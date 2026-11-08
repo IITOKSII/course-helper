@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const VERSION = '19.0';
+  const VERSION = '19.1';
   const KEY = '__courseHelper19';
   if (window[KEY]) { window[KEY].show(); return; }
   // Refresh is recommended when replacing older builds. Stop known old timers.
@@ -44,7 +44,7 @@
   make('small','Auto pauses at questions and unfamiliar interactions. Pause or Escape stops it.',body);
   (document.body || document.documentElement).appendChild(host);
 
-  const state = {running:false,timer:null,doc:null,phase:'idle',deadline:0,signature:'',visited:new Set(),info:null,pending:null,closeIds:new Set(['62CBQWEhsiU']),teachOff:null,documents:0,blockedFrames:0,checks:0,last:'Ready',failure:'',logs:[],closed:false};
+  const state = {running:false,timer:null,doc:null,phase:'idle',deadline:0,signature:'',visited:new Set(),info:null,pending:null,infoDetected:0,infoOpened:0,infoCompleted:0,closeIds:new Set(['62CBQWEhsiU']),teachOff:null,documents:0,blockedFrames:0,checks:0,last:'Ready',failure:'',logs:[],closed:false};
   const POLL=1000;
   function tell(text) { state.last=text; if(statusEl.textContent!==text)statusEl.textContent=text; }
   function log(text) {state.logs.push(text);if(state.logs.length>12)state.logs.shift();}
@@ -130,15 +130,21 @@
     return null;
   }
   function infoButtons(){
-    const out=new Map(), els=state.doc.querySelectorAll('[data-acc-text]');
-    for(let i=0;i<Math.min(els.length,180);i++){
-      const el=els[i];if(!/^(click\s*icon|info(?:rmation)?(?:\s*icon)?)(?:\s+\d+)?$/i.test(el.getAttribute('data-acc-text').trim())||!visible(el))continue;
-      const group=el.closest('.slide-object-stategroup[data-model-id]')||el.closest('[data-model-id]');
-      if(group&&visible(group))out.set(group.getAttribute('data-model-id'),group);
+    const out=new Map();
+    const selector='[data-acc-text],[aria-label],[title],button,[role="button"],.slide-object-stategroup[data-model-id]';
+    const els=state.doc.querySelectorAll(selector);
+    const infoLabel=/\b(?:click\s*icon|info(?:rmation)?(?:\s*icon)?|learn\s*more|more\s*info(?:rmation)?|read\s*more|details?|help)\b/i;
+    for(let i=0;i<Math.min(els.length,400);i++){
+      const el=els[i];if(!visible(el))continue;
+      const labels=[el.getAttribute('data-acc-text'),el.getAttribute('aria-label'),el.getAttribute('title'),el.textContent].filter(Boolean).map(v=>v.trim()).filter(Boolean);
+      if(!labels.some(v=>infoLabel.test(v)))continue;
+      const group=el.closest('.slide-object-stategroup[data-model-id]')||el.closest('[data-model-id]')||(el.matches('[data-model-id]')?el:null);
+      const id=group?.getAttribute('data-model-id');
+      if(id&&visible(group)&&!out.has(id))out.set(id,group);
     }
-    // The supplied slide contains eleven explicitly identified information buttons.
     const known=['5Yf4v0ZEHzB','60IE5Judeh1','6iTVaNjoxjp','5bYJcTGpH9B','6qlRbDy2a3S','5gNe0ZiHI6a','5YT3xfkofN0','5aywoV9m4Fk','5lhh9PFHrxy','6nW3CBlmFjW','6IMFvZXbiYL'];
     if(!out.size && known.every(id=>model(id)))for(const id of known)out.set(id,model(id));
+    state.infoDetected=out.size;
     return [...out.keys()];
   }
   function lessonText(){
@@ -167,13 +173,13 @@
     state.deadline=Date.now()+Math.max(6000,Math.min(120000,text.split(/\s+/).filter(Boolean).length/300*60000));
     state.phase='reading';tell('Reading information. Auto will close it after the reading time.');
   }
-  function resetSlide(){state.visited.clear();state.info=null;state.pending=null;state.phase='ready';state.signature=slideKey();readout.textContent='';}
+  function resetSlide(newSlide=false){if(newSlide){state.visited.clear();state.info=null;state.infoDetected=0;state.infoOpened=0;state.infoCompleted=0;}state.pending=null;state.phase='ready';state.signature=slideKey();readout.textContent='';}
   function step(){
     if(!state.doc.defaultView || !state.doc.documentElement.isConnected){pause('The lesson frame changed. Click Start auto to reconnect.');return;}
     if(quiz()){pause('Question detected. Answer it yourself, then restart Auto.');return;}
     if(state.phase==='navigation'){
       const after=slideKey();
-      if(after && after!==state.signature){log('Slide change confirmed');resetSlide();tell('Next slide confirmed.');return;}
+      if(after && after!==state.signature){log('Slide change confirmed');resetSlide(true);tell('Next slide confirmed.');return;}
       if(Date.now()>state.deadline){pause('Next was clicked, but no slide change was confirmed. Show diagnostics to see the course state.');}
       else tell('Waiting for the next slide to appear…');return;
     }
@@ -184,21 +190,21 @@
       return;
     }
     if(state.phase==='reading'){
-      if(!x){state.visited.add(state.pending);state.pending=null;state.phase='ready';return;}
+      if(!x){state.visited.add(state.pending);state.infoCompleted++;state.pending=null;state.phase='ready';return;}
       if(Date.now()<state.deadline){tell('Reading information: '+Math.ceil((state.deadline-Date.now())/1000)+' seconds remaining.');return;}
       interact(x);state.phase='closing';state.deadline=Date.now()+8000;log('Pop-up X clicked');return;
     }
     if(state.phase==='closing'){
-      if(!x){state.visited.add(state.pending);state.pending=null;state.phase='ready';return;}
+      if(!x){state.visited.add(state.pending);state.infoCompleted++;state.pending=null;state.phase='ready';return;}
       if(Date.now()>state.deadline)pause('The pop-up did not close. Teach pop-up X and try again.');return;
     }
     if(x){if(infoToggle.checked)readPopup();else tell('Close the information pop-up to continue.');return;}
-    const key=slideKey();if(key && key!==state.signature)resetSlide();
+    const key=slideKey();if(key && !state.signature)state.signature=key;
     if(infoToggle.checked){
       if(!state.info)state.info=infoButtons();
       const id=state.info.find(item=>!state.visited.has(item));
-      if(id){const el=model(id);if(!el){state.visited.add(id);return;}
-        state.pending=id;state.phase='opening';state.deadline=Date.now()+8000;interact(el);log('Information button clicked');tell('Opening information '+(state.visited.size+1)+' of '+state.info.length+'…');return;}
+      if(id){const el=model(id);if(!el){state.visited.add(id);state.infoCompleted++;return;}
+        state.pending=id;state.phase='opening';state.deadline=Date.now()+8000;if(interact(el)){state.infoOpened++;log('Information button clicked: '+id);tell('Opening information '+state.infoOpened+' of '+state.info.length+'…');}else{state.visited.add(id);state.infoCompleted++;}return;}
     }
     const time=timeline();const playing=mediaPlaying();
     if(time.known&&!time.done){tell('Waiting for the course timeline: '+time.value+' / '+time.max);return;}
@@ -218,7 +224,7 @@
   }
   start.onclick=()=>{
     if(state.running)return;if(state.teachOff)state.teachOff();
-    try{if(!connect())return;resetSlide();state.running=true;start.textContent='Auto running';tell('Connected. Auto starts in one second.');state.timer=setTimeout(tick,POLL);}catch(error){state.failure=String(error);pause('Could not connect. Show diagnostics.');}
+    try{if(!connect())return;if(!state.signature){state.signature=slideKey();state.phase='ready';}state.running=true;start.textContent='Auto running';tell('Connected. Auto starts in one second.');state.timer=setTimeout(tick,POLL);}catch(error){state.failure=String(error);pause('Could not connect. Show diagnostics.');}
   };
   pauseButton.onclick=()=>pause();
   nextButton.onclick=()=>{pause();if(!connect())return;if(quiz()){tell('Question detected. Complete it manually.');return;}const n=nextIn(state.doc);if(disabled(n))tell('The course has locked Next.');else{interact(n);tell('Course Next clicked once.');}};
@@ -238,7 +244,7 @@
   reportButton.onclick=()=>{
     const was=state.running, previous=state.last;pause('Paused for diagnostics.');
     const data={version:VERSION,wasRunning:was,phase:state.phase,previousStatus:previous,documents:state.documents,blockedFrames:state.blockedFrames,checks:state.checks,error:state.failure,log:state.logs};
-    try{if(state.doc){const n=nextIn(state.doc);data.next=n?{id:n.id,label:name(n),disabled:disabled(n)}:null;data.timeline=timeline();data.informationButtons=state.info?.length||0;data.visited=state.visited.size;}}catch(error){data.inspectionError=String(error);}
+    try{if(state.doc){const n=nextIn(state.doc);data.next=n?{id:n.id,label:name(n),disabled:disabled(n)}:null;data.timeline=timeline();data.informationButtons=state.info?.length||0;data.informationDetected=state.infoDetected;data.informationOpened=state.infoOpened;data.informationCompleted=state.infoCompleted;data.visited=state.visited.size;}}catch(error){data.inspectionError=String(error);}
     reportBox.hidden=false;reportBox.value=JSON.stringify(data,null,2);reportBox.focus();reportBox.select();tell('Report selected. Press Ctrl+C to copy it.');
   };
   let drag=null;
