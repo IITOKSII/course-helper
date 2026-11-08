@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const VERSION = '19.6';
+  const VERSION = '19.7';
   const KEY = '__courseHelper19';
   if (window[KEY]) { window[KEY].stop(); }
   // Refresh is recommended when replacing older builds. Stop known old timers.
@@ -285,7 +285,7 @@
   function readPopup(mode='popup'){
     const text=lessonText();readout.textContent=text;
     state.deadline=Date.now()+Math.max(6000,Math.min(120000,text.split(/\s+/).filter(Boolean).length/300*60000));
-    state.interactionMode=mode;state.phase='reading';tell(mode==='inline'?'Reading revealed information. No close button required.':'Reading information. Auto will close it after the reading time.');
+    state.controlWaitUntil=state.deadline+120000;state.interactionMode=mode;state.phase='reading';tell(mode==='inline'?'Reading revealed information. No close button required.':'Reading information. Auto will close it after the reading time.');
   }
   function resetSlide(newSlide=false){if(newSlide){state.visited.clear();state.info=null;state.infoDetected=0;state.infoOpened=0;state.infoCompleted=0;}state.pending=null;state.pendingBefore=null;state.interactionMode=null;state.phase='ready';state.signature=slideKey();readout.textContent='';}
   function step(){
@@ -300,12 +300,13 @@
     }
     const x=popupClose();
     if(state.phase==='opening'){
-      if(x||popupNext()){readPopup('pages');return;}
+      if(x||popupNext()||popupScope()){readPopup('pages');return;}
       const current=interactionSnapshot(),before=state.pendingBefore;
       if(before&&(current.text!==before.text||current.control!==before.control)){
         log('Information revealed without X: '+state.pending);readPopup('inline');return;
       }
-      if(Date.now()>state.deadline)pause('No visible response was detected for this information button. Open it manually, then show diagnostics.');
+      if(Date.now()>state.deadline)pause('No information or pop-up controls appeared within two minutes. Show diagnostics.');
+      else tell('Waiting for the information or pop-up controls to appear…');
       return;
     }
     if(state.phase==='popup-navigation'){
@@ -318,7 +319,7 @@
     }
     if(state.phase==='reading'){
       const pageNext=popupNext();
-      if(state.interactionMode==='pages'||pageNext){
+      if(state.interactionMode==='pages'||pageNext||(state.interactionMode==='inline'&&popupScope())){
         state.interactionMode='pages';
         if(Date.now()<state.deadline){tell('Reading pop-up page: '+Math.ceil((state.deadline-Date.now())/1000)+' seconds remaining.');return;}
         if(pageNext){
@@ -328,8 +329,9 @@
           if(!interact(pageNext)){pause('Pop-up Next could not be clicked.');return;}
           state.phase='popup-navigation';state.deadline=Date.now()+12000;log('Pop-up Next clicked');return;
         }
-        if(x){interact(x);state.phase='closing';state.deadline=Date.now()+8000;log('Pop-up X clicked');return;}
-        pause('Waiting for a pop-up Next or close control. Show diagnostics if neither is recognised.');return;
+        if(x&&!disabled(x)){interact(x);state.phase='closing';state.deadline=Date.now()+8000;log('Pop-up X clicked');return;}
+        if(Date.now()>state.controlWaitUntil){pause('No enabled pop-up Next or X appeared within two minutes after reading. Show diagnostics.');return;}
+        mediaPlaying();tell('Waiting for the pop-up Next or X to appear or unlock…');return;
       }
       if(state.interactionMode==='inline'){
         if(x){readPopup();return;}
@@ -350,7 +352,7 @@
       state.info=infoButtons();
       const id=state.info.find(item=>!state.visited.has(item)&&!disabled(model(item)));
       if(id){const el=model(id);if(!el)return;
-        state.popupPageCount=0;state.pending=id;state.pendingBefore=interactionSnapshot();state.interactionMode=null;state.phase='opening';state.deadline=Date.now()+8000;if(interact(el)){state.infoOpened++;log('Information button clicked: '+id);tell('Opening information '+state.infoOpened+' of '+state.info.length+'…');}else{state.pending=null;state.phase='ready';tell('Waiting for information button to become enabled.');}return;}
+        state.popupPageCount=0;state.pending=id;state.pendingBefore=interactionSnapshot();state.interactionMode=null;state.phase='opening';state.deadline=Date.now()+120000;if(interact(el)){state.infoOpened++;log('Information button clicked: '+id);tell('Opening information '+state.infoOpened+' of '+state.info.length+'…');}else{state.pending=null;state.phase='ready';tell('Waiting for information button to become enabled.');}return;}
     }
     const time=timeline();const playing=mediaPlaying();
     if(time.known&&!time.done){tell('Waiting for the course timeline: '+time.value+' / '+time.max);return;}
