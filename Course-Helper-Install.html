@@ -1,13 +1,13 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Course Helper 19.0 installer</title><style>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Course Helper 19.1 installer</title><style>
 body{max-width:780px;margin:40px auto;padding:0 20px;background:#101c2b;color:#f3f8ff;font:17px/1.6 system-ui}h1{font-size:32px;margin-bottom:0}p{color:#cfdeed}button{padding:12px 18px;border:1px solid #75d8c6;border-radius:9px;background:#176659;color:white;font:600 16px system-ui;cursor:pointer;margin:4px}textarea{width:100%;height:240px;background:#071321;color:#dcecff;border:1px solid #6a849d;border-radius:8px;padding:12px;box-sizing:border-box}small{display:block;color:#adc2d7}#status{min-height:2em;color:#8fe5cf}li{margin:10px 0}</style></head><body>
-<h1>Course Helper 19.0</h1><p>Install once per course page reload.</p>
-<ol><li><b>Refresh your course first</b> to remove the older helper.</li><li>Copy the code below. Open your lesson and press <b>Ctrl + Shift + J</b> for the Chrome Console.</li><li>Paste the complete code and press <b>Enter</b>. The panel should show <b>Course Helper 19.0</b>.</li><li>Click <b>Start auto</b>. Pause or Escape stops the helper.</li></ol>
+<h1>Course Helper 19.1</h1><p>Install once per course page reload.</p>
+<ol><li><b>Refresh your course first</b> to remove the older helper.</li><li>Copy the code below. Open your lesson and press <b>Ctrl + Shift + J</b> for the Chrome Console.</li><li>Paste the complete code and press <b>Enter</b>. The panel should show <b>Course Helper 19.1</b>.</li><li>Click <b>Start auto</b>. Pause or Escape stops the helper.</li></ol>
 <button id="copy">Copy helper code</button><button id="select">Select all code</button><button id="download">Download plain code</button>
 <p id="status" role="status">Manual copy: click inside the code box, press Ctrl+A, then Ctrl+C.</p>
 <label for="source">Complete helper code</label><textarea id="source" readonly spellcheck="false">(() =&gt; {
   &#x27;use strict&#x27;;
-  const VERSION = &#x27;19.0&#x27;;
+  const VERSION = &#x27;19.1&#x27;;
   const KEY = &#x27;__courseHelper19&#x27;;
   if (window[KEY]) { window[KEY].show(); return; }
   // Refresh is recommended when replacing older builds. Stop known old timers.
@@ -51,7 +51,7 @@ body{max-width:780px;margin:40px auto;padding:0 20px;background:#101c2b;color:#f
   make(&#x27;small&#x27;,&#x27;Auto pauses at questions and unfamiliar interactions. Pause or Escape stops it.&#x27;,body);
   (document.body || document.documentElement).appendChild(host);
 
-  const state = {running:false,timer:null,doc:null,phase:&#x27;idle&#x27;,deadline:0,signature:&#x27;&#x27;,visited:new Set(),info:null,pending:null,closeIds:new Set([&#x27;62CBQWEhsiU&#x27;]),teachOff:null,documents:0,blockedFrames:0,checks:0,last:&#x27;Ready&#x27;,failure:&#x27;&#x27;,logs:[],closed:false};
+  const state = {running:false,timer:null,doc:null,phase:&#x27;idle&#x27;,deadline:0,signature:&#x27;&#x27;,visited:new Set(),info:null,pending:null,infoDetected:0,infoOpened:0,infoCompleted:0,closeIds:new Set([&#x27;62CBQWEhsiU&#x27;]),teachOff:null,documents:0,blockedFrames:0,checks:0,last:&#x27;Ready&#x27;,failure:&#x27;&#x27;,logs:[],closed:false};
   const POLL=1000;
   function tell(text) { state.last=text; if(statusEl.textContent!==text)statusEl.textContent=text; }
   function log(text) {state.logs.push(text);if(state.logs.length&gt;12)state.logs.shift();}
@@ -137,15 +137,21 @@ body{max-width:780px;margin:40px auto;padding:0 20px;background:#101c2b;color:#f
     return null;
   }
   function infoButtons(){
-    const out=new Map(), els=state.doc.querySelectorAll(&#x27;[data-acc-text]&#x27;);
-    for(let i=0;i&lt;Math.min(els.length,180);i++){
-      const el=els[i];if(!/^(click\s*icon|info(?:rmation)?(?:\s*icon)?)(?:\s+\d+)?$/i.test(el.getAttribute(&#x27;data-acc-text&#x27;).trim())||!visible(el))continue;
-      const group=el.closest(&#x27;.slide-object-stategroup[data-model-id]&#x27;)||el.closest(&#x27;[data-model-id]&#x27;);
-      if(group&amp;&amp;visible(group))out.set(group.getAttribute(&#x27;data-model-id&#x27;),group);
+    const out=new Map();
+    const selector=&#x27;[data-acc-text],[aria-label],[title],button,[role=&quot;button&quot;],.slide-object-stategroup[data-model-id]&#x27;;
+    const els=state.doc.querySelectorAll(selector);
+    const infoLabel=/\b(?:click\s*icon|info(?:rmation)?(?:\s*icon)?|learn\s*more|more\s*info(?:rmation)?|read\s*more|details?|help)\b/i;
+    for(let i=0;i&lt;Math.min(els.length,400);i++){
+      const el=els[i];if(!visible(el))continue;
+      const labels=[el.getAttribute(&#x27;data-acc-text&#x27;),el.getAttribute(&#x27;aria-label&#x27;),el.getAttribute(&#x27;title&#x27;),el.textContent].filter(Boolean).map(v=&gt;v.trim()).filter(Boolean);
+      if(!labels.some(v=&gt;infoLabel.test(v)))continue;
+      const group=el.closest(&#x27;.slide-object-stategroup[data-model-id]&#x27;)||el.closest(&#x27;[data-model-id]&#x27;)||(el.matches(&#x27;[data-model-id]&#x27;)?el:null);
+      const id=group?.getAttribute(&#x27;data-model-id&#x27;);
+      if(id&amp;&amp;visible(group)&amp;&amp;!out.has(id))out.set(id,group);
     }
-    // The supplied slide contains eleven explicitly identified information buttons.
     const known=[&#x27;5Yf4v0ZEHzB&#x27;,&#x27;60IE5Judeh1&#x27;,&#x27;6iTVaNjoxjp&#x27;,&#x27;5bYJcTGpH9B&#x27;,&#x27;6qlRbDy2a3S&#x27;,&#x27;5gNe0ZiHI6a&#x27;,&#x27;5YT3xfkofN0&#x27;,&#x27;5aywoV9m4Fk&#x27;,&#x27;5lhh9PFHrxy&#x27;,&#x27;6nW3CBlmFjW&#x27;,&#x27;6IMFvZXbiYL&#x27;];
     if(!out.size &amp;&amp; known.every(id=&gt;model(id)))for(const id of known)out.set(id,model(id));
+    state.infoDetected=out.size;
     return [...out.keys()];
   }
   function lessonText(){
@@ -174,13 +180,13 @@ body{max-width:780px;margin:40px auto;padding:0 20px;background:#101c2b;color:#f
     state.deadline=Date.now()+Math.max(6000,Math.min(120000,text.split(/\s+/).filter(Boolean).length/300*60000));
     state.phase=&#x27;reading&#x27;;tell(&#x27;Reading information. Auto will close it after the reading time.&#x27;);
   }
-  function resetSlide(){state.visited.clear();state.info=null;state.pending=null;state.phase=&#x27;ready&#x27;;state.signature=slideKey();readout.textContent=&#x27;&#x27;;}
+  function resetSlide(newSlide=false){if(newSlide){state.visited.clear();state.info=null;state.infoDetected=0;state.infoOpened=0;state.infoCompleted=0;}state.pending=null;state.phase=&#x27;ready&#x27;;state.signature=slideKey();readout.textContent=&#x27;&#x27;;}
   function step(){
     if(!state.doc.defaultView || !state.doc.documentElement.isConnected){pause(&#x27;The lesson frame changed. Click Start auto to reconnect.&#x27;);return;}
     if(quiz()){pause(&#x27;Question detected. Answer it yourself, then restart Auto.&#x27;);return;}
     if(state.phase===&#x27;navigation&#x27;){
       const after=slideKey();
-      if(after &amp;&amp; after!==state.signature){log(&#x27;Slide change confirmed&#x27;);resetSlide();tell(&#x27;Next slide confirmed.&#x27;);return;}
+      if(after &amp;&amp; after!==state.signature){log(&#x27;Slide change confirmed&#x27;);resetSlide(true);tell(&#x27;Next slide confirmed.&#x27;);return;}
       if(Date.now()&gt;state.deadline){pause(&#x27;Next was clicked, but no slide change was confirmed. Show diagnostics to see the course state.&#x27;);}
       else tell(&#x27;Waiting for the next slide to appear…&#x27;);return;
     }
@@ -191,21 +197,21 @@ body{max-width:780px;margin:40px auto;padding:0 20px;background:#101c2b;color:#f
       return;
     }
     if(state.phase===&#x27;reading&#x27;){
-      if(!x){state.visited.add(state.pending);state.pending=null;state.phase=&#x27;ready&#x27;;return;}
+      if(!x){state.visited.add(state.pending);state.infoCompleted++;state.pending=null;state.phase=&#x27;ready&#x27;;return;}
       if(Date.now()&lt;state.deadline){tell(&#x27;Reading information: &#x27;+Math.ceil((state.deadline-Date.now())/1000)+&#x27; seconds remaining.&#x27;);return;}
       interact(x);state.phase=&#x27;closing&#x27;;state.deadline=Date.now()+8000;log(&#x27;Pop-up X clicked&#x27;);return;
     }
     if(state.phase===&#x27;closing&#x27;){
-      if(!x){state.visited.add(state.pending);state.pending=null;state.phase=&#x27;ready&#x27;;return;}
+      if(!x){state.visited.add(state.pending);state.infoCompleted++;state.pending=null;state.phase=&#x27;ready&#x27;;return;}
       if(Date.now()&gt;state.deadline)pause(&#x27;The pop-up did not close. Teach pop-up X and try again.&#x27;);return;
     }
     if(x){if(infoToggle.checked)readPopup();else tell(&#x27;Close the information pop-up to continue.&#x27;);return;}
-    const key=slideKey();if(key &amp;&amp; key!==state.signature)resetSlide();
+    const key=slideKey();if(key &amp;&amp; !state.signature)state.signature=key;
     if(infoToggle.checked){
       if(!state.info)state.info=infoButtons();
       const id=state.info.find(item=&gt;!state.visited.has(item));
-      if(id){const el=model(id);if(!el){state.visited.add(id);return;}
-        state.pending=id;state.phase=&#x27;opening&#x27;;state.deadline=Date.now()+8000;interact(el);log(&#x27;Information button clicked&#x27;);tell(&#x27;Opening information &#x27;+(state.visited.size+1)+&#x27; of &#x27;+state.info.length+&#x27;…&#x27;);return;}
+      if(id){const el=model(id);if(!el){state.visited.add(id);state.infoCompleted++;return;}
+        state.pending=id;state.phase=&#x27;opening&#x27;;state.deadline=Date.now()+8000;if(interact(el)){state.infoOpened++;log(&#x27;Information button clicked: &#x27;+id);tell(&#x27;Opening information &#x27;+state.infoOpened+&#x27; of &#x27;+state.info.length+&#x27;…&#x27;);}else{state.visited.add(id);state.infoCompleted++;}return;}
     }
     const time=timeline();const playing=mediaPlaying();
     if(time.known&amp;&amp;!time.done){tell(&#x27;Waiting for the course timeline: &#x27;+time.value+&#x27; / &#x27;+time.max);return;}
@@ -225,7 +231,7 @@ body{max-width:780px;margin:40px auto;padding:0 20px;background:#101c2b;color:#f
   }
   start.onclick=()=&gt;{
     if(state.running)return;if(state.teachOff)state.teachOff();
-    try{if(!connect())return;resetSlide();state.running=true;start.textContent=&#x27;Auto running&#x27;;tell(&#x27;Connected. Auto starts in one second.&#x27;);state.timer=setTimeout(tick,POLL);}catch(error){state.failure=String(error);pause(&#x27;Could not connect. Show diagnostics.&#x27;);}
+    try{if(!connect())return;if(!state.signature){state.signature=slideKey();state.phase=&#x27;ready&#x27;;}state.running=true;start.textContent=&#x27;Auto running&#x27;;tell(&#x27;Connected. Auto starts in one second.&#x27;);state.timer=setTimeout(tick,POLL);}catch(error){state.failure=String(error);pause(&#x27;Could not connect. Show diagnostics.&#x27;);}
   };
   pauseButton.onclick=()=&gt;pause();
   nextButton.onclick=()=&gt;{pause();if(!connect())return;if(quiz()){tell(&#x27;Question detected. Complete it manually.&#x27;);return;}const n=nextIn(state.doc);if(disabled(n))tell(&#x27;The course has locked Next.&#x27;);else{interact(n);tell(&#x27;Course Next clicked once.&#x27;);}};
@@ -245,7 +251,7 @@ body{max-width:780px;margin:40px auto;padding:0 20px;background:#101c2b;color:#f
   reportButton.onclick=()=&gt;{
     const was=state.running, previous=state.last;pause(&#x27;Paused for diagnostics.&#x27;);
     const data={version:VERSION,wasRunning:was,phase:state.phase,previousStatus:previous,documents:state.documents,blockedFrames:state.blockedFrames,checks:state.checks,error:state.failure,log:state.logs};
-    try{if(state.doc){const n=nextIn(state.doc);data.next=n?{id:n.id,label:name(n),disabled:disabled(n)}:null;data.timeline=timeline();data.informationButtons=state.info?.length||0;data.visited=state.visited.size;}}catch(error){data.inspectionError=String(error);}
+    try{if(state.doc){const n=nextIn(state.doc);data.next=n?{id:n.id,label:name(n),disabled:disabled(n)}:null;data.timeline=timeline();data.informationButtons=state.info?.length||0;data.informationDetected=state.infoDetected;data.informationOpened=state.infoOpened;data.informationCompleted=state.infoCompleted;data.visited=state.visited.size;}}catch(error){data.inspectionError=String(error);}
     reportBox.hidden=false;reportBox.value=JSON.stringify(data,null,2);reportBox.focus();reportBox.select();tell(&#x27;Report selected. Press Ctrl+C to copy it.&#x27;);
   };
   let drag=null;
@@ -268,5 +274,5 @@ const field=document.getElementById('source'),status=document.getElementById('st
 function select(){field.focus();field.select();field.setSelectionRange(0,field.value.length);}
 document.getElementById('select').onclick=()=>{select();status.textContent='Code selected. Press Ctrl+C, then paste into the course Console.';};
 document.getElementById('copy').onclick=()=>{select();let copied=false;try{copied=document.execCommand('copy');}catch{}if(copied){status.textContent='Copied. Paste into your course Console and press Enter.';return;}if(navigator.clipboard?.writeText){navigator.clipboard.writeText(field.value).then(()=>status.textContent='Copied. Paste into your course Console and press Enter.',()=>{select();status.textContent='Press Ctrl+C to copy the selected code.';});}else{status.textContent='Press Ctrl+C to copy the selected code.';}};
-document.getElementById('download').onclick=()=>{const blob=new Blob([field.value],{type:'text/plain;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='Course-Helper-19-Code.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);};
+document.getElementById('download').onclick=()=>{const blob=new Blob([field.value],{type:'text/plain;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='Course-Helper-19.1-Code.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);};
 </script></body></html>
