@@ -1,8 +1,8 @@
 (() => {
   'use strict';
-  const VERSION = '19.2';
+  const VERSION = '19.3';
   const KEY = '__courseHelper19';
-  if (window[KEY]) { window[KEY].show(); return; }
+  if (window[KEY]) { window[KEY].stop(); }
   // Refresh is recommended when replacing older builds. Stop known old timers.
   if (typeof window.__chPCStop === 'function') {
     try { window.__chPCStop(); } catch (error) { console.warn('Old helper cleanup:', error); }
@@ -47,7 +47,7 @@
   make('small','Auto pauses at questions and unfamiliar interactions. Pause or Escape stops it.',body);
   (document.body || document.documentElement).appendChild(host);
 
-  const state = {running:false,timer:null,doc:null,phase:'idle',deadline:0,signature:'',visited:new Set(),info:null,pending:null,infoDetected:0,infoOpened:0,infoCompleted:0,closeIds:new Set(['62CBQWEhsiU']),teachOff:null,documents:0,blockedFrames:0,checks:0,last:'Ready',failure:'',logs:[],closed:false,selectedQuestion:null,selectionListener:null};
+  const state = {running:false,timer:null,doc:null,phase:'idle',deadline:0,signature:'',visited:new Set(),info:null,pending:null,infoDetected:0,infoOpened:0,infoCompleted:0,closeIds:new Set(['62CBQWEhsiU']),teachOff:null,documents:0,blockedFrames:0,checks:0,last:'Ready',failure:'',logs:[],closed:false,selectedQuestion:null,selectionListener:null,selectionDocs:new Set()};
   const POLL=1000;
   function tell(text) { state.last=text; if(statusEl.textContent!==text)statusEl.textContent=text; }
   function log(text) {state.logs.push(text);if(state.logs.length>12)state.logs.shift();}
@@ -88,6 +88,7 @@
       }
     }
     state.doc=selected;
+    for(const doc of seen)attachQuestionListener(doc);
     if(!selected){pause(state.blockedFrames?'The lesson is in a protected frame. Select the lesson frame in the Console dropdown and run this code there.':'Course Next button not found. Open a lesson, then click Start auto again.');return false;}
     return true;
   }
@@ -110,7 +111,11 @@
   }
   function slideKey(){
     const d=state.doc;const pieces=[];
-    const slides=d.querySelectorAll('[data-slide-id],.slide-object-stategroup[data-model-id],.slide-object-textbox[data-model-id]');
+    const roots=d.querySelectorAll('[data-slide-id]');
+    for(const el of roots)if(visible(el))return el.getAttribute('data-slide-id');
+    const slide=d.querySelector('.slide-container .slide,main .slide,.slide[data-id]');
+    if(slide&&visible(slide)&&(slide.id||slide.getAttribute('data-id')))return slide.id||slide.getAttribute('data-id');
+    const slides=d.querySelectorAll('.slide-object-textbox[data-model-id]');
     for(let i=0;i<Math.min(slides.length,100)&&pieces.length<16;i++)if(visible(slides[i]))pieces.push(slides[i].getAttribute('data-slide-id')||slides[i].getAttribute('data-model-id'));
     const txt=d.querySelectorAll('.slide-object-textbox,.slide-object-text,.slide-title,[data-slide-number]');
     for(let i=0;i<Math.min(txt.length,60);i++){
@@ -146,7 +151,7 @@
       if(id&&visible(group)&&!out.has(id))out.set(id,group);
     }
     const known=['5Yf4v0ZEHzB','60IE5Judeh1','6iTVaNjoxjp','5bYJcTGpH9B','6qlRbDy2a3S','5gNe0ZiHI6a','5YT3xfkofN0','5aywoV9m4Fk','5lhh9PFHrxy','6nW3CBlmFjW','6IMFvZXbiYL'];
-    if(!out.size && known.every(id=>model(id)))for(const id of known)out.set(id,model(id));
+    for(const id of known){const el=model(id);if(el&&!out.has(id))out.set(id,el);}
     state.infoDetected=out.size;
     return [...out.keys()];
   }
@@ -163,22 +168,23 @@
       recommendation.textContent='Selection captured. Click Recommend answer to inspect this question.';
     }
   }
-  function attachQuestionListener(){
-    if(state.selectionListener)return;
-    state.selectionListener=e=>questionSelection(e);
-    document.addEventListener('click',state.selectionListener,true);
+  function attachQuestionListener(doc=document){
+    if(state.selectionDocs.has(doc))return;
+    if(!state.selectionListener)state.selectionListener=e=>questionSelection(e);
+    doc.addEventListener('click',state.selectionListener,true);
+    state.selectionDocs.add(doc);
   }
   function answerCandidates(container){
     const result=[],seen=new Set();
     const controls=container.querySelectorAll('input[type="radio"],input[type="checkbox"],[role="radio"],[role="checkbox"]');
     for(const control of controls){
       const label=control.labels?.[0]||control.closest('label')||control.closest('[role="option"]')||control.parentElement;
-      const txt=(label?.innerText||label?.textContent||control.getAttribute('aria-label')||'').trim().replace(/\\s+/g,' ');
+      const txt=(label?.innerText||label?.textContent||control.getAttribute('aria-label')||'').trim().replace(/\s+/g,' ');
       if(txt && !seen.has(txt)){result.push(txt);seen.add(txt);}
     }
     if(!result.length){
       for(const label of container.querySelectorAll('label,[role="option"]')){
-        const txt=(label.innerText||label.textContent||'').trim().replace(/\\s+/g,' ');
+        const txt=(label.innerText||label.textContent||'').trim().replace(/\s+/g,' ');
         if(txt && !seen.has(txt)){result.push(txt);seen.add(txt);}
       }
     }
@@ -213,9 +219,9 @@
     }).sort((a,b)=>b.score-a.score);
     const top=scored[0],runner=scored[1];
     if(!evidence || top.score<2 || top.score===runner.score){
-      recommendation.textContent='Question: '+question.slice(0,500)+'\\n\\nOptions: '+options.join(' | ')+'\\n\\nNo reliable recommendation: the available lesson text does not clearly distinguish these answers.';
+      recommendation.textContent='Question: '+question.slice(0,500)+'\n\nOptions: '+options.join(' | ')+'\n\nNo reliable recommendation: the available lesson text does not clearly distinguish these answers.';
     }else{
-      recommendation.textContent='Possible answer (low confidence): '+top.option+'\\n\\nReason: this option shares '+top.score+' key terms with the visible lesson material. Check the actual meaning before submitting; matching words does not prove correctness.';
+      recommendation.textContent='Possible answer (low confidence): '+top.option+'\n\nReason: this option shares '+top.score+' key terms with the visible lesson material. Check the actual meaning before submitting; matching words does not prove correctness.';
     }
   }
 
@@ -248,6 +254,7 @@
   function resetSlide(newSlide=false){if(newSlide){state.visited.clear();state.info=null;state.infoDetected=0;state.infoOpened=0;state.infoCompleted=0;}state.pending=null;state.phase='ready';state.signature=slideKey();readout.textContent='';}
   function step(){
     if(!state.doc.defaultView || !state.doc.documentElement.isConnected){pause('The lesson frame changed. Click Start auto to reconnect.');return;}
+    if(state.phase==='ready'&&!popupClose()){const key=slideKey();if(key&&state.signature&&key!==state.signature)resetSlide(true);}
     if(quiz()){pause('Question detected. Answer it yourself, then restart Auto.');return;}
     if(state.phase==='navigation'){
       const after=slideKey();
@@ -262,7 +269,7 @@
       return;
     }
     if(state.phase==='reading'){
-      if(!x){state.visited.add(state.pending);state.infoCompleted++;state.pending=null;state.phase='ready';return;}
+      if(!x){if(state.pending){state.visited.add(state.pending);state.infoCompleted++;}state.pending=null;state.phase='ready';return;}
       if(Date.now()<state.deadline){tell('Reading information: '+Math.ceil((state.deadline-Date.now())/1000)+' seconds remaining.');return;}
       interact(x);state.phase='closing';state.deadline=Date.now()+8000;log('Pop-up X clicked');return;
     }
@@ -273,10 +280,10 @@
     if(x){if(infoToggle.checked)readPopup();else tell('Close the information pop-up to continue.');return;}
     const key=slideKey();if(key && !state.signature)state.signature=key;
     if(infoToggle.checked){
-      if(!state.info)state.info=infoButtons();
-      const id=state.info.find(item=>!state.visited.has(item));
-      if(id){const el=model(id);if(!el){state.visited.add(id);state.infoCompleted++;return;}
-        state.pending=id;state.phase='opening';state.deadline=Date.now()+8000;if(interact(el)){state.infoOpened++;log('Information button clicked: '+id);tell('Opening information '+state.infoOpened+' of '+state.info.length+'…');}else{state.visited.add(id);state.infoCompleted++;}return;}
+      state.info=infoButtons();
+      const id=state.info.find(item=>!state.visited.has(item)&&!disabled(model(item)));
+      if(id){const el=model(id);if(!el)return;
+        state.pending=id;state.phase='opening';state.deadline=Date.now()+8000;if(interact(el)){state.infoOpened++;log('Information button clicked: '+id);tell('Opening information '+state.infoOpened+' of '+state.info.length+'…');}else{state.pending=null;state.phase='ready';tell('Waiting for information button to become enabled.');}return;}
     }
     const time=timeline();const playing=mediaPlaying();
     if(time.known&&!time.done){tell('Waiting for the course timeline: '+time.value+' / '+time.max);return;}
@@ -299,14 +306,15 @@
     try{if(!connect())return;if(!state.signature){state.signature=slideKey();state.phase='ready';}state.running=true;start.textContent='Auto running';tell('Connected. Auto starts in one second.');state.timer=setTimeout(tick,POLL);}catch(error){state.failure=String(error);pause('Could not connect. Show diagnostics.');}
   };
   pauseButton.onclick=()=>pause();
-  recommendButton.onclick=()=>{pause();recommendAnswer();};
-  nextButton.onclick=()=>{pause();if(!connect())return;if(quiz()){tell('Question detected. Complete it manually.');return;}const n=nextIn(state.doc);if(disabled(n))tell('The course has locked Next.');else{interact(n);tell('Course Next clicked once.');}};
+  recommendButton.onclick=()=>{pause();if(!state.selectedQuestion)connect();recommendAnswer();};
+  nextButton.onclick=()=>{pause();if(!connect())return;if(quiz()){tell('Question detected. Complete it manually.');return;}const n=nextIn(state.doc);if(disabled(n))tell('The course has locked Next.');else{state.signature=slideKey();interact(n);state.phase='navigation';state.deadline=Date.now()+12000;tell('Course Next clicked once.');}};
   teachClose.onclick=()=>{
     pause();if(!connect())return;
     const doc=state.doc;
     const listener=e=>{
       if(e.composedPath().includes(host))return;
-      const el=e.target.closest('[data-model-id],[id^="acc-"]');
+      const target=e.composedPath().find(node=>node?.nodeType===1&&node.closest?.('[data-model-id],[id^="acc-"]'));
+      const el=target?.closest('[data-model-id],[id^="acc-"]');
       const id=el?.getAttribute('data-model-id')||el?.id.replace(/^acc-/,'');
       if(!id){tell('Click the course pop-up X itself.');return;}
       state.closeIds.add(id);log('Close control learned');state.teachOff();tell('X learned for this session. Click Start auto.');
@@ -327,7 +335,7 @@
   minimize.onclick=()=>{body.hidden=!body.hidden;minimize.textContent=body.hidden?'+':'−';};
   const keydown=e=>{if(e.key==='Escape')pause();};document.addEventListener('keydown',keydown,true);
   attachQuestionListener();
-  function cleanup(){pause();if(state.selectionListener)document.removeEventListener('click',state.selectionListener,true);state.closed=true;document.removeEventListener('keydown',keydown,true);host.remove();delete window[KEY];if(window.__chPCStop===cleanup)delete window.__chPCStop;}
+  function cleanup(){pause();for(const doc of state.selectionDocs)doc.removeEventListener('click',state.selectionListener,true);state.selectionDocs.clear();state.closed=true;document.removeEventListener('keydown',keydown,true);host.remove();delete window[KEY];if(window.__chPCStop===cleanup)delete window.__chPCStop;}
   closeButton.onclick=cleanup;
   window[KEY]={show(){body.hidden=false;tell(state.running?'Auto is already running.':'Already installed. Click Start auto.');},stop:cleanup};
   window.__chPCStop=cleanup;
