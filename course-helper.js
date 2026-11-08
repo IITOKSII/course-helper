@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const VERSION = '19.5';
+  const VERSION = '19.6';
   const KEY = '__courseHelper19';
   if (window[KEY]) { window[KEY].stop(); }
   // Refresh is recommended when replacing older builds. Stop known old timers.
@@ -39,6 +39,7 @@
   for (const value of [1,1.5,2,3]) { const o=make('option',value+'×',speedSelect);o.value=String(value); }
   const secondary = make('nav','',body);
   const teachClose = make('button','Teach pop-up X',secondary);
+  const teachNext = make('button','Teach pop-up Next',secondary);
   const reportButton = make('button','Show diagnostics',secondary);
   const readout = make('p','',body);readout.id='read';
   const recommendation = make('p','Click a question or answer on the course, then choose Recommend answer.',body);
@@ -47,7 +48,7 @@
   make('small','Auto pauses at questions and unfamiliar interactions. Pause or Escape stops it.',body);
   (document.body || document.documentElement).appendChild(host);
 
-  const state = {running:false,timer:null,doc:null,phase:'idle',deadline:0,signature:'',visited:new Set(),info:null,pending:null,pendingBefore:null,interactionMode:null,infoDetected:0,infoOpened:0,infoCompleted:0,closeIds:new Set(['62CBQWEhsiU']),teachOff:null,documents:0,blockedFrames:0,checks:0,last:'Ready',failure:'',logs:[],closed:false,selectedQuestion:null,selectionListener:null,selectionDocs:new Set()};
+  const state = {running:false,timer:null,doc:null,phase:'idle',deadline:0,signature:'',visited:new Set(),info:null,pending:null,pendingBefore:null,interactionMode:null,infoDetected:0,infoOpened:0,infoCompleted:0,popupNextIds:new Set(),closeIds:new Set(['62CBQWEhsiU']),teachOff:null,documents:0,blockedFrames:0,checks:0,last:'Ready',failure:'',logs:[],closed:false,selectedQuestion:null,selectionListener:null,selectionDocs:new Set()};
   const POLL=1000;
   function tell(text) { state.last=text; if(statusEl.textContent!==text)statusEl.textContent=text; }
   function log(text) {state.logs.push(text);if(state.logs.length>12)state.logs.shift();}
@@ -145,7 +146,8 @@
     for(let i=0;i<Math.min(els.length,400);i++){
       const el=els[i];if(!visible(el))continue;
       const labels=[el.getAttribute('data-acc-text'),el.getAttribute('aria-label'),el.getAttribute('title'),el.textContent].filter(Boolean).map(v=>v.trim()).filter(Boolean);
-      if(!labels.some(v=>infoLabel.test(v)))continue;
+      if(!labels.some(v=>v.length<=100&&infoLabel.test(v)))continue;
+      if(el.matches('.slide-object-textbox,.slide-object-text'))continue;
       const group=el.closest('.slide-object-stategroup[data-model-id]')||el.closest('[data-model-id]')||(el.matches('[data-model-id]')?el:null);
       const id=group?.getAttribute('data-model-id');
       if(id&&visible(group)&&!out.has(id))out.set(id,group);
@@ -253,12 +255,13 @@
     return [...scopes].reverse().find(el=>visible(el))||null;
   }
   function popupNext(){
+    for(const id of state.popupNextIds){const el=model(id);if(el&&!disabled(el)&&el!==nextIn(state.doc))return el;}
     const scope=popupScope();
     const candidates=(scope||state.doc).querySelectorAll('button,[role="button"],[data-acc-text],[aria-label]');
     const courseNext=nextIn(state.doc);
     for(const el of candidates){
       if(!visible(el)||disabled(el)||el===courseNext||el.id==='next'||el.contains(courseNext)||courseNext?.contains(el))continue;
-      if(/^(next(?:\s+(?:page|step|slide))?|continue|[▶►→›❯])$/i.test(name(el))){
+      if(/^(next(?:\s+(?:page|step|slide))?|continue|forward|right(?:\s+arrow)?|[▶►→›❯])$/i.test(name(el))){
         const target=el.closest('.slide-object-stategroup[data-model-id]')||el;
         // Outside an identified dialog, only authored slide objects qualify.
         if(scope||target.hasAttribute('data-model-id'))return target;
@@ -372,6 +375,24 @@
   pauseButton.onclick=()=>pause();
   recommendButton.onclick=()=>{pause();if(!state.selectedQuestion)connect();recommendAnswer();};
   nextButton.onclick=()=>{pause();if(!connect())return;if(quiz()){tell('Question detected. Complete it manually.');return;}const n=nextIn(state.doc);if(disabled(n))tell('The course has locked Next.');else{state.signature=slideKey();interact(n);state.phase='navigation';state.deadline=Date.now()+12000;tell('Course Next clicked once.');}};
+  teachNext.onclick=()=>{
+    pause();if(!connect())return;
+    const doc=state.doc;
+    const listener=e=>{
+      if(e.composedPath().includes(host))return;
+      const target=e.composedPath().find(node=>node?.nodeType===1&&node.closest?.('[data-model-id],[id^="acc-"]'));
+      const el=target?.closest('[data-model-id],[id^="acc-"]');
+      const id=el?.getAttribute('data-model-id')||el?.id.replace(/^acc-/,'');
+      const courseNext=nextIn(doc);
+      if(!id||el===courseNext||courseNext?.contains(el)){tell('Click the arrow inside the pop-up.');return;}
+      state.popupNextIds.add(id);state.teachOff();
+      // The teaching click advances the page; read that page when Auto resumes.
+      readPopup('pages');log('Pop-up Next learned: '+id);
+      tell('Pop-up Next learned. Click Start auto.');
+    };
+    state.teachOff=()=>{doc.removeEventListener('click',listener,true);state.teachOff=null;};
+    doc.addEventListener('click',listener,true);tell('Click the Next arrow inside the open pop-up now.');
+  };
   teachClose.onclick=()=>{
     pause();if(!connect())return;
     const doc=state.doc;
@@ -389,7 +410,7 @@
   reportButton.onclick=()=>{
     const was=state.running, previous=state.last;pause('Paused for diagnostics.');
     const data={version:VERSION,wasRunning:was,phase:state.phase,previousStatus:previous,documents:state.documents,blockedFrames:state.blockedFrames,checks:state.checks,error:state.failure,log:state.logs};
-    try{if(state.doc){const n=nextIn(state.doc);data.next=n?{id:n.id,label:name(n),disabled:disabled(n)}:null;data.timeline=timeline();data.informationButtons=state.info?.length||0;data.informationDetected=state.infoDetected;data.informationOpened=state.infoOpened;data.informationCompleted=state.infoCompleted;data.visited=state.visited.size;data.popupNext=popupNext()?name(popupNext()):null;data.popupScope=!!popupScope();data.popupPages=state.popupPageCount||0;data.pending=state.pending;data.interactionMode=state.interactionMode;data.closeControl=popupClose()?name(popupClose()):null;data.buttons=infoButtons().map(id=>({id,label:name(model(id)),visited:state.visited.has(id)}));}}catch(error){data.inspectionError=String(error);}
+    try{if(state.doc){const n=nextIn(state.doc);data.next=n?{id:n.id,label:name(n),disabled:disabled(n)}:null;data.timeline=timeline();data.informationButtons=state.info?.length||0;data.informationDetected=state.infoDetected;data.informationOpened=state.infoOpened;data.informationCompleted=state.infoCompleted;data.visited=state.visited.size;data.popupNext=popupNext()?name(popupNext()):null;data.popupScope=!!popupScope();data.popupControls=[...(popupScope()||state.doc).querySelectorAll('button,[role="button"],[data-acc-text],[aria-label],.slide-object-stategroup[data-model-id]')].filter(visible).slice(0,50).map(el=>({id:el.getAttribute('data-model-id')||el.id,label:name(el),disabled:disabled(el)}));data.popupPages=state.popupPageCount||0;data.pending=state.pending;data.interactionMode=state.interactionMode;data.closeControl=popupClose()?name(popupClose()):null;data.buttons=infoButtons().map(id=>({id,label:name(model(id)),visited:state.visited.has(id)}));}}catch(error){data.inspectionError=String(error);}
     reportBox.hidden=false;reportBox.value=JSON.stringify(data,null,2);reportBox.focus();reportBox.select();tell('Report selected. Press Ctrl+C to copy it.');
   };
   let drag=null;
