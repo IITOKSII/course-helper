@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const VERSION = '19.1';
+  const VERSION = '19.2';
   const KEY = '__courseHelper19';
   if (window[KEY]) { window[KEY].show(); return; }
   // Refresh is recommended when replacing older builds. Stop known old timers.
@@ -30,6 +30,7 @@
   const start = make('button','Start auto',controls); start.className='primary';
   const pauseButton = make('button','Pause',controls);
   const nextButton = make('button','Next once',controls);
+  const recommendButton = make('button','Recommend answer',controls);
   const infoLabel = make('label','',body);
   const infoToggle = make('input','',infoLabel); infoToggle.type='checkbox'; infoToggle.checked=true;
   infoLabel.appendChild(document.createTextNode(' Open information pop-ups automatically'));
@@ -40,11 +41,13 @@
   const teachClose = make('button','Teach pop-up X',secondary);
   const reportButton = make('button','Show diagnostics',secondary);
   const readout = make('p','',body);readout.id='read';
+  const recommendation = make('p','Click a question or answer on the course, then choose Recommend answer.',body);
+  recommendation.style.cssText='white-space:pre-wrap;padding:8px;border:1px solid #66839c;border-radius:8px';
   const reportBox = make('textarea','',body);reportBox.hidden=true;reportBox.readOnly=true;reportBox.setAttribute('aria-label','Diagnostic report');
   make('small','Auto pauses at questions and unfamiliar interactions. Pause or Escape stops it.',body);
   (document.body || document.documentElement).appendChild(host);
 
-  const state = {running:false,timer:null,doc:null,phase:'idle',deadline:0,signature:'',visited:new Set(),info:null,pending:null,infoDetected:0,infoOpened:0,infoCompleted:0,closeIds:new Set(['62CBQWEhsiU']),teachOff:null,documents:0,blockedFrames:0,checks:0,last:'Ready',failure:'',logs:[],closed:false};
+  const state = {running:false,timer:null,doc:null,phase:'idle',deadline:0,signature:'',visited:new Set(),info:null,pending:null,infoDetected:0,infoOpened:0,infoCompleted:0,closeIds:new Set(['62CBQWEhsiU']),teachOff:null,documents:0,blockedFrames:0,checks:0,last:'Ready',failure:'',logs:[],closed:false,selectedQuestion:null,selectionListener:null};
   const POLL=1000;
   function tell(text) { state.last=text; if(statusEl.textContent!==text)statusEl.textContent=text; }
   function log(text) {state.logs.push(text);if(state.logs.length>12)state.logs.shift();}
@@ -147,6 +150,75 @@
     state.infoDetected=out.size;
     return [...out.keys()];
   }
+
+  // Recommendations are local, evidence-based hints, not AI-generated answers.
+  function questionSelection(event){
+    if(event.composedPath?.().includes(host))return;
+    const target=event.target?.nodeType===1?event.target:event.target?.parentElement;
+    if(!target)return;
+    const container=target.closest('fieldset,[role="group"],[role="radiogroup"],.question,.quiz-question,.assessment-question,[data-question-id],form')||target.closest('label')?.parentElement||target;
+    const text=(container.innerText||container.textContent||'').trim();
+    if(text || target.matches('input,button,[role="radio"],[role="checkbox"],label')){
+      state.selectedQuestion={target,container};
+      recommendation.textContent='Selection captured. Click Recommend answer to inspect this question.';
+    }
+  }
+  function attachQuestionListener(){
+    if(state.selectionListener)return;
+    state.selectionListener=e=>questionSelection(e);
+    document.addEventListener('click',state.selectionListener,true);
+  }
+  function answerCandidates(container){
+    const result=[],seen=new Set();
+    const controls=container.querySelectorAll('input[type="radio"],input[type="checkbox"],[role="radio"],[role="checkbox"]');
+    for(const control of controls){
+      const label=control.labels?.[0]||control.closest('label')||control.closest('[role="option"]')||control.parentElement;
+      const txt=(label?.innerText||label?.textContent||control.getAttribute('aria-label')||'').trim().replace(/\\s+/g,' ');
+      if(txt && !seen.has(txt)){result.push(txt);seen.add(txt);}
+    }
+    if(!result.length){
+      for(const label of container.querySelectorAll('label,[role="option"]')){
+        const txt=(label.innerText||label.textContent||'').trim().replace(/\\s+/g,' ');
+        if(txt && !seen.has(txt)){result.push(txt);seen.add(txt);}
+      }
+    }
+    return result.slice(0,20);
+  }
+  function recommendAnswer(){
+    const selection=state.selectedQuestion;
+    if(!selection?.target?.isConnected){
+      recommendation.textContent='Click the question or an answer box first, then try again.';
+      return;
+    }
+    const doc=selection.target.ownerDocument;
+    let container=selection.container;
+    let options=answerCandidates(container);
+    for(let parent=container.parentElement,depth=0;options.length<2&&parent&&depth<5;parent=parent.parentElement,depth++){
+      const found=answerCandidates(parent);
+      if(found.length>=2){container=parent;options=found;break;}
+    }
+    const question=(container.innerText||container.textContent||'').trim().slice(0,1500);
+    const evidence=[...doc.querySelectorAll('.slide-object-textbox,.slide-object-text,main p,article p')]
+      .filter(el=>visible(el)&&!container.contains(el))
+      .map(el=>(el.innerText||el.textContent||'').trim()).filter(Boolean).join(' ').slice(0,20000);
+    if(options.length<2){
+      recommendation.textContent='Question captured, but I cannot reliably identify its answer options. Try clicking directly on a multiple-choice answer.';
+      return;
+    }
+    const tokens=t=>new Set((t.toLowerCase().match(/[a-z]{4,}/g)||[]).filter(w=>!['that','this','with','from','have','which','what','when','where','would','should','could','there','their','about','your','they','them','true','false'].includes(w)));
+    const context=tokens(evidence);
+    const scored=options.map(option=>{
+      const words=[...tokens(option)];
+      return {option,score:words.filter(w=>context.has(w)).length,words:words.length};
+    }).sort((a,b)=>b.score-a.score);
+    const top=scored[0],runner=scored[1];
+    if(!evidence || top.score<2 || top.score===runner.score){
+      recommendation.textContent='Question: '+question.slice(0,500)+'\\n\\nOptions: '+options.join(' | ')+'\\n\\nNo reliable recommendation: the available lesson text does not clearly distinguish these answers.';
+    }else{
+      recommendation.textContent='Possible answer (low confidence): '+top.option+'\\n\\nReason: this option shares '+top.score+' key terms with the visible lesson material. Check the actual meaning before submitting; matching words does not prove correctness.';
+    }
+  }
+
   function lessonText(){
     const chunks=new Set(),els=state.doc.querySelectorAll('.slide-object-textbox,.slide-object-text,[role="dialog"] p,main p');
     for(let i=0;i<Math.min(els.length,80);i++)if(visible(els[i])){const t=(els[i].textContent||'').trim().slice(0,1200);if(t)chunks.add(t);}
@@ -227,6 +299,7 @@
     try{if(!connect())return;if(!state.signature){state.signature=slideKey();state.phase='ready';}state.running=true;start.textContent='Auto running';tell('Connected. Auto starts in one second.');state.timer=setTimeout(tick,POLL);}catch(error){state.failure=String(error);pause('Could not connect. Show diagnostics.');}
   };
   pauseButton.onclick=()=>pause();
+  recommendButton.onclick=()=>{pause();recommendAnswer();};
   nextButton.onclick=()=>{pause();if(!connect())return;if(quiz()){tell('Question detected. Complete it manually.');return;}const n=nextIn(state.doc);if(disabled(n))tell('The course has locked Next.');else{interact(n);tell('Course Next clicked once.');}};
   teachClose.onclick=()=>{
     pause();if(!connect())return;
@@ -253,7 +326,8 @@
   header.onpointerup=header.onpointercancel=()=>{drag=null;};
   minimize.onclick=()=>{body.hidden=!body.hidden;minimize.textContent=body.hidden?'+':'−';};
   const keydown=e=>{if(e.key==='Escape')pause();};document.addEventListener('keydown',keydown,true);
-  function cleanup(){pause();state.closed=true;document.removeEventListener('keydown',keydown,true);host.remove();delete window[KEY];if(window.__chPCStop===cleanup)delete window.__chPCStop;}
+  attachQuestionListener();
+  function cleanup(){pause();if(state.selectionListener)document.removeEventListener('click',state.selectionListener,true);state.closed=true;document.removeEventListener('keydown',keydown,true);host.remove();delete window[KEY];if(window.__chPCStop===cleanup)delete window.__chPCStop;}
   closeButton.onclick=cleanup;
   window[KEY]={show(){body.hidden=false;tell(state.running?'Auto is already running.':'Already installed. Click Start auto.');},stop:cleanup};
   window.__chPCStop=cleanup;
